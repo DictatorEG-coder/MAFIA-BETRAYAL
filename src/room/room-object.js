@@ -120,7 +120,7 @@ export class RoomCoordinator {
       const player=state.game.players.find(p=>p.id===String(actorId));
       if(!player) return Response.json({error:"not_a_player"},{status:403});
       const allies=player.faction==="mafia"?state.game.players.filter(p=>p.faction==="mafia"&&p.id!==player.id).map(p=>state.players[p.id]?.name??p.id):[];
-      return Response.json({role:player.role,allies});
+      return Response.json({role:player.role,allies,mission:player.mission??null});
     }
     if (url.pathname === "/result") {
       const state=await this.ctx.storage.get("room");
