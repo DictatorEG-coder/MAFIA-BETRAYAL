@@ -31,7 +31,7 @@ test("lobby prepares private chats and starts with secret role assignments",asyn
  const prepared=await call(room,"/prepare",{actorId:"1"});
  assert.equal(prepared.status,200);
  assert.equal((await prepared.json()).players.length,5);
- const started=await call(room,"/start",{});
+ const started=await call(room,"/start",{actorId:"1"});
  const data=await started.json();
  assert.equal(started.status,200);
  assert.equal(data.players.length,5);
@@ -42,7 +42,7 @@ test("lobby prepares private chats and starts with secret role assignments",asyn
 test("room refuses a second game start",async()=>{
  const room=makeRoom();
  for(let i=1;i<=5;i++) await call(room,"/join",{chatId:"-100",actor:{id:String(i),name:"P"+i}});
- await call(room,"/start",{});
- const again=await call(room,"/start",{});
+ await call(room,"/start",{actorId:"1"});
+ const again=await call(room,"/start",{actorId:"1"});
  assert.equal(again.status,409);
 });
