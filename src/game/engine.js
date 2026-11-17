@@ -13,6 +13,21 @@ export function createGame(playerIds, random = Math.random, now = Date.now()) {
   };
 }
 
+export function avenge(game, actorId, targetId) {
+  const actor=game.players.find(p=>p.id===String(actorId));
+  const target=game.players.find(p=>p.id===String(targetId)&&p.alive);
+  if(!actor || actor.role!=="avenger" || actor.alive) throw new Error("Avenger must be eliminated before using this ability");
+  if(actor.avenged) throw new Error("Avenger ability already used");
+  if(!target || target.id===actor.id) throw new Error("Invalid revenge target");
+  actor.avenged=true;
+  target.alive=false;
+  target.health=0;
+  game.winner=getWinner(game.players,game.round);
+  if(game.winner) { game.phase="ended"; game.endedAt=Date.now(); }
+  game.stateVersion++;
+  return {targetId:target.id,winner:game.winner};
+}
+
 export function castVote(game, voterId, targetId) {
   if (game.phase !== "voting") throw new Error("Voting is not open");
   const voter = game.players.find(p => p.id === String(voterId) && p.alive);
