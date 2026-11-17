@@ -76,6 +76,16 @@ export class RoomCoordinator {
       await this.persistGameStart(state.chatId,game);
       return Response.json({ ok:true, gameId:game.id, players:ids.map(id=>({id,name:state.players[id].name,role:game.players.find(p=>p.id===id).role})), round:game.round });
     }
+    if (url.pathname === "/newgame" && request.method === "POST") {
+      const {actorId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
+      if(state.status!=="ended") return Response.json({error:"game_not_ended"},{status:409});
+      state.status="lobby"; state.game=null; state.deadline=null; state.stateVersion++;
+      await this.ctx.storage.put("room",state);
+      if(this.env.DB) await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?").bind("lobby",new Date().toISOString(),state.chatId).run();
+      return Response.json({ok:true,players:Object.keys(state.players).length});
+    }
     if (url.pathname === "/players") {
       const state=await this.ctx.storage.get("room");
       if(!state) return Response.json({players:[]});
