@@ -12,6 +12,7 @@ test("votes are phase-gated and cannot be submitted twice", () => {
   const game = createGame(["1","2","3","4","5"], () => 0.1);
   assert.throws(() => castVote(game, "1", "2"), /Voting is not open/);
   game.phase = "voting";
+  game.defendant = "2";
   castVote(game, "1", "2");
   assert.throws(() => castVote(game, "1", "3"), /already submitted/);
 });
