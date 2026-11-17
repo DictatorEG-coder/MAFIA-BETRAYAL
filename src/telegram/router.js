@@ -50,7 +50,22 @@ export async function routeUpdate(update,env) {
  const actor={id:String(message.from.id),name:[message.from.first_name,message.from.last_name].filter(Boolean).join(" ")||"لاعب"};
  const inPrivate=message.chat.type==="private";
  if(command==="/start"||command==="/rules") { await sendMessage(env,chatId,HELP); return; }
- if(inPrivate) { await sendMessage(env,chatId,"افتح البوت أولًا، ثم انضم إلى غرفة اللعبة من المجموعة باستخدام /join."); return; }
+ if(inPrivate) {
+  const privateActions={"/attack":"attack","/protect":"protect","/investigate":"investigate","/nominate":"nominate","/vote":"vote"};
+  if(privateActions[command]) {
+   const roomId=parts[1]; const slot=Number(parts[2]);
+   if(!roomId || !/^-?[0-9]+$/.test(roomId) || !Number.isInteger(slot) || slot<1 || slot>10) {
+    await sendMessage(env,chatId,"الصيغة: "+command+" رقم_المجموعة رقم_اللاعب"); return;
+   }
+   const players=await roster(env,roomId); const target=players.find(p=>p.slot===slot&&p.alive);
+   if(!target) { await sendMessage(env,chatId,"اللاعب غير موجود أو أُقصي، أو أن رقم المجموعة غير صحيح."); return; }
+   const path=command==="/nominate"?"/nominate":command==="/vote"?"/vote":"/night/action";
+   const body=command==="/nominate"||command==="/vote"?{actorId:actor.id,targetId:target.id}:{actorId:actor.id,action:privateActions[command],targetId:target.id};
+   const response=await roomCall(env,roomId,path,body); const data=await response.json();
+   await sendMessage(env,chatId,response.ok?"تم تسجيل اختيارك سرًا.":"لم يُقبل اختيارك: "+(data.error??"خطأ")); return;
+  }
+  await sendMessage(env,chatId,"أوامر اللعبة السرية تُرسل هنا في الخاص. استخدم الصيغة: /attack رقم_المجموعة رقم_اللاعب. أرسل /rules لعرض بقية الأوامر."); return;
+ }
 
  if(command==="/mafia"||command==="/join") {
   const response=await roomCall(env,chatId,"/join",{chatId,actor}); const data=await response.json();
@@ -83,20 +98,13 @@ export async function routeUpdate(update,env) {
   const mafia=data.players.filter(p=>["boss","killer","spy"].includes(p.role));
   for(const p of data.players) {
    const allies=["boss","killer","spy"].includes(p.role)?"\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
-   await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\nدورك: "+ROLE_NAMES[p.role]+"\nمهمتك: "+ROLE_OBJECTIVES[p.role]+allies+"\nلا تكشف دورك لأي لاعب.");
+   await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\\nدورك: "+ROLE_NAMES[p.role]+"\\nمهمتك: "+ROLE_OBJECTIVES[p.role]+allies+"\\nالأفعال السرية تُرسل هنا في الخاص. رقم المجموعة: "+chatId+"\\nمثال: /attack "+chatId+" 2\\nلا تكشف دورك لأي لاعب.");
   }
   await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. استخدم /players لمعرفة أرقام اللاعبين."); return;
  }
  const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/nominate":"nominate","/vote":"vote"};
  if(actionCommands[command]) {
-  const slot=Number(arg);
-  if(!Number.isInteger(slot)||slot<1||slot>10) { await sendMessage(env,chatId,"اكتب رقم لاعب صحيحًا، مثل: "+command+" 2"); return; }
-  const players=await roster(env,chatId); const target=players.find(p=>p.slot===slot&&p.alive);
-  if(!target) { await sendMessage(env,chatId,"رقم اللاعب غير موجود أو أنه أُقصي."); return; }
-  const path=command==="/nominate"?"/nominate":command==="/vote"?"/vote":"/night/action";
-  const body=command==="/nominate"||command==="/vote"?{actorId:actor.id,targetId:target.id}:{actorId:actor.id,action:actionCommands[command],targetId:target.id};
-  const response=await roomCall(env,chatId,path,body); const data=await response.json();
-  await sendMessage(env,chatId,response.ok?"تم تسجيل اختيارك.":"لم يُقبل اختيارك: "+(data.error??"خطأ")); return;
+  await sendMessage(env,chatId,"للحفاظ على سرية الأفعال والتصويت، أرسل هذا الأمر في الخاص مع رقم المجموعة ورقم اللاعب. مثال: "+command+" "+chatId+" 2"); return;
  }
  if(command==="/resolve") {
   const response=await roomCall(env,chatId,"/night/resolve",{actorId:actor.id}); const data=await response.json();
