@@ -6,6 +6,35 @@ import { castVote, finishVoting } from "../game/engine.js";
 export class RoomCoordinator {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
 
+  async persistJoin(chatId, actor, created) {
+    if (!this.env.DB) return;
+    const now = new Date().toISOString();
+    await this.env.DB.prepare(
+      "INSERT INTO rooms (room_id,chat_id,status,created_at,updated_at) VALUES (?,?, 'lobby', ?, ?) ON CONFLICT(room_id) DO UPDATE SET updated_at=excluded.updated_at"
+    ).bind(String(chatId),String(chatId),now,now).run();
+    await this.env.DB.prepare(
+      "INSERT INTO players (room_id,telegram_id,display_name,joined_at) VALUES (?,?,?,?) ON CONFLICT(room_id,telegram_id) DO UPDATE SET display_name=excluded.display_name"
+    ).bind(String(chatId),String(actor.id),String(actor.name ?? "لاعب"),now).run();
+  }
+
+  async persistGameStart(roomId, game) {
+    if (!this.env.DB) return;
+    const now = new Date(game.startedAt).toISOString();
+    await this.env.DB.prepare("UPDATE rooms SET status='playing',updated_at=? WHERE room_id=?").bind(now,String(roomId)).run();
+    await this.env.DB.prepare(
+      "INSERT INTO games (game_id,room_id,status,started_at) VALUES (?,?,?,?)"
+    ).bind(game.id,String(roomId),"playing",now).run();
+  }
+
+  async persistGameEnd(game) {
+    if (!this.env.DB) return;
+    await this.env.DB.prepare(
+      "UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?"
+    ).bind(new Date(game.endedAt ?? Date.now()).toISOString(),JSON.stringify(game.winner),game.id).run();
+    await this.env.DB.prepare("UPDATE rooms SET status='ended',updated_at=? WHERE room_id=?")
+      .bind(new Date().toISOString(),String(game.roomId ?? "")).run();
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/join" && request.method === "POST") {
@@ -18,6 +47,7 @@ export class RoomCoordinator {
       state.players[String(actor.id)] = { id:String(actor.id), name:String(actor.name ?? "لاعب") };
       state.stateVersion++;
       await this.ctx.storage.put("room", state);
+      await this.persistJoin(chatId,actor);
       return Response.json({ ok:true, players:Object.keys(state.players).length, version:state.stateVersion });
     }
     if (url.pathname === "/leave" && request.method === "POST") {
@@ -51,6 +81,7 @@ export class RoomCoordinator {
       state.game = game;
       state.stateVersion++;
       await this.ctx.storage.put("room", state);
+      await this.persistGameStart(state.chatId,game);
       return Response.json({ ok:true, gameId:game.id, players:ids.map(id=>({id,name:state.players[id].name,role:game.players.find(p=>p.id===id).role})), round:game.round });
     }
     if (url.pathname === "/status") {
@@ -100,6 +131,14 @@ export class RoomCoordinator {
         state.game=game;
         if(game.phase==="ended") state.status="ended";
         await this.ctx.storage.put("room",state);
+        if(game.phase==="ended") {
+          if(this.env.DB) {
+            await this.env.DB.prepare("UPDATE games SET status=?,ended_at=?,result_json=? WHERE game_id=?")
+              .bind("ended",new Date(game.endedAt ?? Date.now()).toISOString(),JSON.stringify(game.winner),game.id).run();
+            await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?")
+              .bind("ended",new Date().toISOString(),state.chatId).run();
+          }
+        }
         return Response.json({ok:true,eliminated:result.eliminated,reason:result.reason,phase:game.phase,round:game.round,winner:game.winner});
       } catch(e){ return Response.json({error:e.message},{status:400}); }
     }
