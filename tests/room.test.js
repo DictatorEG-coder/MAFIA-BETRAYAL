@@ -78,3 +78,18 @@ test("roles stay hidden from the room until the game ends and private lookup is 
  const outsider=await call(room,"/myrole",{actorId:"99"});
  assert.equal(outsider.status,403);
 });
+
+
+test("durable alarm advances the day into nomination after its deadline",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{
+  chatId:"-100",creatorId:"1",status:"playing",
+  players:{"1":{id:"1",name:"P1"}},stateVersion:1,
+  deadline:Date.now()-1,
+  game:{phase:"day",round:1,stateVersion:1,players:[],nominations:{}}
+ });
+ await room.alarm();
+ const state=await room.ctx.storage.get("room");
+ assert.equal(state.game.phase,"nomination");
+ assert.ok(state.deadline>Date.now());
+});
