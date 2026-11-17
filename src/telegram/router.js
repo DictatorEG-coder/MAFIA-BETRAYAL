@@ -63,7 +63,7 @@ export async function routeUpdate(update, env) {
     return;
   }
   if(command==="/startgame") {
-    const preflight=await roomCall(env,chatId,"/prepare",{});
+    const preflight=await roomCall(env,chatId,"/prepare",{actorId:actor.id});
     const ready=await preflight.json();
     if(!preflight.ok) {
       await sendMessage(env,chatId,ready.error==="player_count"?"لا يمكن البدء. العدد الحالي "+ready.count+"؛ نحتاج من 5 إلى 10 لاعبين.":"تعذر تجهيز اللعبة: "+(ready.error??"خطأ"));
