@@ -22,9 +22,21 @@ export class RoomCoordinator {
       const state = await this.ctx.storage.get("room");
       return Response.json({ status: state?.status ?? "empty", players: Object.keys(state?.players ?? {}).length });
     }
-    if (url.pathname === "/alarm") {
-      return Response.json({ ok: true });
+    if (url.pathname === "/schedule" && request.method === "POST") {
+      const body = await request.json();
+      const deadline = Number(body.deadline);
+      if (!Number.isFinite(deadline) || deadline <= Date.now() || deadline > Date.now() + 30 * 60 * 1000) {
+        return Response.json({ error: "invalid_deadline" }, { status: 400 });
+      }
+      const state = await this.ctx.storage.get("room");
+      if (!state) return Response.json({ error: "room_not_found" }, { status: 404 });
+      state.deadline = deadline;
+      state.stateVersion++;
+      await this.ctx.storage.put("room", state);
+      await this.ctx.storage.setAlarm(deadline);
+      return Response.json({ ok: true, deadline, version: state.stateVersion });
     }
+    if (url.pathname === "/alarm") return Response.json({ ok: true });
     return new Response("Not found", { status: 404 });
   }
 
