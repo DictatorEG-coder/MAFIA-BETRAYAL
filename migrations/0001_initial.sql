@@ -40,3 +40,10 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS idx_players_room ON players(room_id);
 CREATE INDEX IF NOT EXISTS idx_games_room ON games(room_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_room ON audit_events(room_id, created_at);
+
+CREATE TABLE IF NOT EXISTS processed_updates (
+  update_id INTEGER PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'processing',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_processed_updates_created ON processed_updates(created_at);
