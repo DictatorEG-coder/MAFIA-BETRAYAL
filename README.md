@@ -21,7 +21,7 @@
 - شروط فوز أولية وإظهار كشف الأدوار عند النهاية
 - إعادة استخدام الغرفة في جولة جديدة
 - حفظ بيانات الغرف واللاعبين والجولات في D1
-- Webhook secret validation وDurable Object Alarms
+- Webhook secret validation وD1 update deduplication وDurable Object Alarms
 - اختبارات تلقائية لمنطق الأدوار والتصويت والليل والغرف والأمان
 
 ## أوامر Telegram
