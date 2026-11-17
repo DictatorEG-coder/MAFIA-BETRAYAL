@@ -8,6 +8,7 @@ const HELP = [
  "/startgame — تجهيز الخاص وبدء اللعبة",
  "/players — عرض اللاعبين وأرقامهم",
  "/status — حالة الغرفة",
+ "/newgame — فتح جولة جديدة بعد انتهاء السابقة (قائد الغرفة فقط)",
  "أوامر اللعب: /attack رقم، /protect رقم، /investigate رقم، /nominate رقم، /vote رقم",
  "أوامر قائد الغرفة: /resolve، /defendant، /openvote، /finishvote",
  "/rules — عرض هذه القائمة"
@@ -62,6 +63,10 @@ export async function routeUpdate(update,env) {
  if(command==="/status") {
   const data=await (await roomCall(env,chatId,"/status")).json();
   await sendMessage(env,chatId,"الحالة: "+data.status+"\nاللاعبون: "+data.players+"/10"+(data.phase?"\nالمرحلة: "+data.phase:"")+(data.round?"\nالجولة: "+data.round:"")); return;
+ }
+ if(command==="/newgame") {
+  const response=await roomCall(env,chatId,"/newgame",{actorId:actor.id}); const data=await response.json();
+  await sendMessage(env,chatId,response.ok?"أُعيد فتح الغرفة. يمكن للجميع الاستعداد لجولة جديدة.":"تعذر فتح جولة جديدة: "+(data.error??"خطأ")); return;
  }
  if(command==="/players") {
   const players=await roster(env,chatId);
