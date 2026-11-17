@@ -94,7 +94,9 @@ export class RoomCoordinator {
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
     if (url.pathname === "/night/resolve" && request.method === "POST") {
+      const {actorId}=await request.json();
       const state = await this.ctx.storage.get("room");
+      if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if (!state?.game || state.status !== "playing") return Response.json({error:"no_active_game"},{status:409});
       const result = resolveNight(state.game);
       state.stateVersion++;
@@ -116,13 +118,17 @@ export class RoomCoordinator {
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
     if (url.pathname === "/defendant" && request.method === "POST") {
+      const {actorId}=await request.json();
       const state=await this.ctx.storage.get("room");
+      if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if(!state?.game) return Response.json({error:"no_active_game"},{status:409});
       try { const result=selectDefendant(state.game); await this.ctx.storage.put("room",state); return Response.json({ok:true,defendant:result.defendant}); }
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
     if (url.pathname === "/open-voting" && request.method === "POST") {
+      const {actorId}=await request.json();
       const state=await this.ctx.storage.get("room");
+      if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if(!state?.game || state.game.phase!=="defense") return Response.json({error:"defense_not_active"},{status:409});
       state.game.phase="voting"; state.game.stateVersion++; state.stateVersion++;
       await this.ctx.storage.put("room",state);
@@ -136,7 +142,9 @@ export class RoomCoordinator {
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
     if (url.pathname === "/vote/finish" && request.method === "POST") {
+      const {actorId}=await request.json();
       const state=await this.ctx.storage.get("room");
+      if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if(!state?.game) return Response.json({error:"no_active_game"},{status:409});
       try {
         const {game,result}=finishVoting(state.game);
