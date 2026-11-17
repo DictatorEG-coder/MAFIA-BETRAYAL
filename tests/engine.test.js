@@ -16,3 +16,12 @@ test("votes are phase-gated and cannot be submitted twice", () => {
   castVote(game, "1", "2");
   assert.throws(() => castVote(game, "1", "3"), /already submitted/);
 });
+
+test("secret ballot accepts votes only for the selected defendant",()=>{
+ const game=createGame(["1","2","3","4","5"],()=>0.2);
+ game.phase="voting"; game.defendant="2";
+ assert.throws(()=>castVote(game,"1","3"),/accused player/);
+ assert.throws(()=>castVote(game,"2","2"),/Invalid vote/);
+ castVote(game,"1","2");
+ assert.equal(game.votes["1"],"2");
+});
