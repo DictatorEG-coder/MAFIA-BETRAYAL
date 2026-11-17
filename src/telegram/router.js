@@ -63,18 +63,31 @@ export async function routeUpdate(update, env) {
     return;
   }
   if(command==="/startgame") {
-    const response=await roomCall(env,chatId,"/start",{});
-    const data=await response.json();
-    if(!response.ok) {
-      await sendMessage(env,chatId,data.error==="player_count"?"لا يمكن البدء. العدد الحالي "+data.count+"؛ نحتاج من 5 إلى 10 لاعبين.":"تعذر بدء اللعبة: "+(data.error??"خطأ"));
+    const preflight=await roomCall(env,chatId,"/prepare",{});
+    const ready=await preflight.json();
+    if(!preflight.ok) {
+      await sendMessage(env,chatId,ready.error==="player_count"?"لا يمكن البدء. العدد الحالي "+ready.count+"؛ نحتاج من 5 إلى 10 لاعبين.":"تعذر تجهيز اللعبة: "+(ready.error??"خطأ"));
       return;
     }
     const failures=[];
-    for(const player of data.players) {
-      try { await sendMessage(env,player.id,"🎭 تم توزيع دورك في MAFIA: BETRAYAL\nدورك: "+(ROLE_NAMES[player.role]??player.role)+"\nلا تكشف دورك لأي لاعب."); }
+    for(const player of ready.players) {
+      try { await sendMessage(env,player.id,"تم تجهيز غرفة MAFIA: BETRAYAL. ستصلك رسالتك السرية عند بدء الجولة."); }
       catch { failures.push(player.name); }
     }
-    await sendMessage(env,chatId,"بدأت اللعبة. تم إرسال الأدوار سرًا إلى الخاص."+(failures.length?"\nتعذر مراسلة: "+failures.join("، ")+"\nيجب أن يفتح هؤلاء البوت ويضغطوا Start قبل بدء جولة جديدة.":""));
+    if(failures.length) {
+      await sendMessage(env,chatId,"لم تبدأ الجولة. يجب على اللاعبين التاليين فتح البوت والضغط على Start ثم إعادة المحاولة: "+failures.join("، "));
+      return;
+    }
+    const response=await roomCall(env,chatId,"/start",{});
+    const data=await response.json();
+    if(!response.ok) {
+      await sendMessage(env,chatId,"تعذر بدء اللعبة: "+(data.error??"خطأ"));
+      return;
+    }
+    for(const player of data.players) {
+      await sendMessage(env,player.id,"🎭 تم توزيع دورك في MAFIA: BETRAYAL\\nدورك: "+(ROLE_NAMES[player.role]??player.role)+"\\nلا تكشف دورك لأي لاعب.");
+    }
+    await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص.");
     return;
   }
   await sendMessage(env,chatId,"أمر غير معروف. أرسل /rules لعرض الأوامر.");
