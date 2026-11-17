@@ -21,3 +21,18 @@ test("night actions are one-per-action and resolve to day",()=>{
  assert.throws(()=>submitNightAction(g,"m","attack","d"),/already submitted/);
  const result=resolveNight(g); assert.deepEqual(result.deaths,["c"]); assert.equal(g.phase,"day");
 });
+
+test("mafia coordinates one shared attack instead of killing multiple targets",()=>{
+ const g={phase:"night",stateVersion:0,actions:{},players:[
+  {id:"b",role:"boss",faction:"mafia",alive:true,health:100,armor:0},
+  {id:"k",role:"killer",faction:"mafia",alive:true,health:100,armor:0},
+  {id:"c",role:"citizen",faction:"city",alive:true,health:100,armor:0},
+  {id:"d",role:"doctor",faction:"city",alive:true,health:100,armor:0},
+  {id:"s",role:"survivor",faction:"independent",alive:true,health:100,armor:0}
+ ]};
+ submitNightAction(g,"b","attack","c");
+ submitNightAction(g,"k","attack","c");
+ const result=resolveNight(g);
+ assert.deepEqual(result.deaths,["c"]);
+ assert.equal(g.players.find(p=>p.id==="d").alive,true);
+});
