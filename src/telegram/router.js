@@ -14,6 +14,18 @@ const ROLE_NAMES = {
   detective:"المحقق", doctor:"الطبيب", guard:"الحارس", avenger:"المنتقم", citizen:"المواطن",
   boss:"زعيم المافيا", killer:"القاتل", spy:"الجاسوس", survivor:"الناجي", gambler:"المقامر"
 };
+const ROLE_OBJECTIVES = {
+  detective:"افحص لاعبًا ليلًا لتعرف إن كان من المافيا.",
+  doctor:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
+  guard:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
+  avenger:"دورك الدفاع عن المدينة؛ ستُضاف قدرتك الخاصة في مرحلة التوازن التالية.",
+  citizen:"راقب النقاش وصوّت بحذر لإقصاء التهديدات.",
+  boss:"نسّق هجوم المافيا ليلًا وابقَ متخفيًا.",
+  killer:"شارك المافيا في اختيار هدف الهجوم الليلي.",
+  spy:"أنت من المافيا؛ قدرة التخريب لم تُفعّل بعد.",
+  survivor:"هدفك البقاء حيًا حتى نهاية الجولة الرابعة.",
+  gambler:"أنت مستقل؛ مهمتك السرية لم تُفعّل بعد."
+};
 
 async function roomCall(env, chatId, path, body) {
   const stub=env.ROOMS.get(env.ROOMS.idFromName(String(chatId)));
@@ -84,8 +96,10 @@ export async function routeUpdate(update, env) {
       await sendMessage(env,chatId,"تعذر بدء اللعبة: "+(data.error??"خطأ"));
       return;
     }
+    const mafiaPlayers=data.players.filter(p=>["boss","killer","spy"].includes(p.role));
     for(const player of data.players) {
-      await sendMessage(env,player.id,"🎭 تم توزيع دورك في MAFIA: BETRAYAL\\nدورك: "+(ROLE_NAMES[player.role]??player.role)+"\\nلا تكشف دورك لأي لاعب.");
+      const allies=["boss","killer","spy"].includes(player.role) ? "\\nحلفاؤك: "+mafiaPlayers.filter(p=>p.id!==player.id).map(p=>p.name).join("، ") : "";
+      await sendMessage(env,player.id,"🎭 MAFIA: BETRAYAL\\nدورك: "+(ROLE_NAMES[player.role]??player.role)+"\\nمهمتك: "+(ROLE_OBJECTIVES[player.role]??"ابقَ على قيد الحياة.")+allies+"\\nلا تكشف دورك لأي لاعب.");
     }
     await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص.");
     return;
