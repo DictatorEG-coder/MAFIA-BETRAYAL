@@ -106,7 +106,8 @@ export async function routeUpdate(update,env) {
    const response=await roomCall(env,roomId,"/myrole",{actorId:actor.id}); const data=await response.json();
    if(!response.ok) { await sendMessage(env,chatId,"تعذر استرجاع دورك: "+(data.error??"خطأ")); return; }
    const allies=data.allies?.length?"\nحلفاؤك: "+data.allies.join("، "):"";
-   await sendMessage(env,chatId,"🎭 دورك: "+(ROLE_NAMES[data.role]??data.role)+"\nمهمتك: "+(ROLE_OBJECTIVES[data.role]??"ابقَ على قيد الحياة.")+allies); return;
+   const mission=data.mission?"\nمهمتك السرية لهذه الجولة: "+(GAMBLER_MISSION_TEXTS[data.mission]??"أكمل مهمتك."):"";
+   await sendMessage(env,chatId,"🎭 دورك: "+(ROLE_NAMES[data.role]??data.role)+"\nمهمتك: "+(ROLE_OBJECTIVES[data.role]??"ابقَ على قيد الحياة.")+mission+allies); return;
   }
   const privateActions={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote","/avenge":"avenge"};
   if(privateActions[command]) {
