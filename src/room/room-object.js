@@ -3,7 +3,7 @@ import { resolveNight, submitNightAction } from "../game/night.js";
 import { nominate, selectDefendant } from "../game/day.js";
 import { castVote, finishVoting, avenge } from "../game/engine.js";
 import { sendMessage } from "../telegram/api.js";
-import { GAMBLER_MISSION_TEXT, gamblerMissionText } from "../game/gambler.js";
+import { gamblerMissionText } from "../game/gambler.js";
 
 export class RoomCoordinator {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
@@ -300,7 +300,7 @@ export class RoomCoordinator {
       const completed=finishVoting(game);
       state.game=completed.game;
       const activeGambler=completed.game.players.find(p=>p.role==="gambler"&&p.alive);
-      if(activeGambler?.mission && this.env.TELEGRAM_BOT_TOKEN) {
+      if(completed.game.phase!=="ended" && activeGambler?.mission && this.env.TELEGRAM_BOT_TOKEN) {
         try { await sendMessage(this.env,activeGambler.id,"🎲 مهمتك السرية الجديدة لهذا الدور: "+gamblerMissionText(activeGambler.mission)); }
         catch(error) { console.error("gambler_mission_delivery_failed",error?.message??"unknown"); }
       }
