@@ -163,7 +163,7 @@ export async function routeUpdate(update,env) {
   for(const p of data.players) {
    const allies=["boss","killer","spy"].includes(p.role)?"\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
    try {
-    await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\nدورك: "+ROLE_NAMES[p.role]+"\nمهمتك: "+ROLE_OBJECTIVES[p.role]+allies+"\nالأفعال السرية تُرسل هنا في الخاص. رقم المجموعة: "+chatId+"\nاسترجاع الدور: /myrole "+chatId+"\nمثال: /attack "+chatId+" 2 أو /spy "+chatId+" 2\nلا تكشف دورك لأي لاعب.");
+    await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\nدورك: "+ROLE_NAMES[p.role]+"\nمهمتك: "+ROLE_OBJECTIVES[p.role]+(p.mission?"\nمهمتك السرية لهذه الجولة: "+(GAMBLER_MISSION_TEXTS[p.mission]??"أكمل مهمتك."):"")+allies+"\nالأفعال السرية تُرسل هنا في الخاص. رقم المجموعة: "+chatId+"\nاسترجاع الدور: /myrole "+chatId+"\nمثال: /attack "+chatId+" 2 أو /spy "+chatId+" 2\nلا تكشف دورك لأي لاعب.");
    } catch { deliveryFailures.push(p.name); }
   }
   await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. استخدم /players لمعرفة أرقام اللاعبين."+(deliveryFailures.length?"\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، ")+" — يمكن لكل لاعب استرجاع دوره في الخاص عبر /myrole "+chatId:"")); return;
