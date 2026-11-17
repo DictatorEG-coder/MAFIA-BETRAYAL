@@ -1,28 +1,74 @@
 # MAFIA: BETRAYAL
 
-A Telegram social-deduction game set in the fictional city of **الغُراب**.
+لعبة استنتاج اجتماعي وخيانة داخل مجموعات Telegram، تدور أحداثها في مدينة **الغُراب**.
 
-## Stack
+## التقنية
+- Cloudflare Workers: استقبال Telegram Webhook
+- Cloudflare Durable Objects: حالة مستقلة ومتسلسلة لكل غرفة
+- Cloudflare D1: حفظ الغرف واللاعبين وسجل الجولات
+- JavaScript ES Modules
+- Node.js built-in test runner
 
-- Cloudflare Workers: Telegram webhook and HTTP entry point
-- Cloudflare D1: durable relational records
-- Cloudflare Durable Objects: one serialized game coordinator per room
-- JavaScript ES modules; Node.js built-in test runner
+## ما يعمل في النواة الحالية
+- إنشاء غرفة والانضمام والمغادرة، من 5 إلى 10 لاعبين
+- صلاحية بدء اللعبة وإدارة المراحل لقائد الغرفة
+- فحص توفر الرسائل الخاصة قبل بدء توزيع الأدوار
+- توزيع الأدوار وإرسالها سرًا، مع إرسال أسماء حلفاء المافيا للمافيا فقط
+- قائمة لاعبين مرقمة دون كشف أدوارهم
+- أفعال ليلية: هجوم المافيا المنسق، الحماية، والتحقيق
+- الترشيح، اختيار المتهم، والتصويت السري لصالح المتهم فقط
+- عدم كشف أدوار المقصيين حتى نهاية اللعبة
+- شروط فوز أولية وإظهار كشف الأدوار عند النهاية
+- إعادة استخدام الغرفة في جولة جديدة
+- حفظ بيانات الغرف واللاعبين والجولات في D1
+- Webhook secret validation وDurable Object Alarms
+- اختبارات تلقائية لمنطق الأدوار والتصويت والليل والغرف والأمان
 
-## Status
+## أوامر Telegram
+```
+/mafia       إنشاء غرفة
+/join        الانضمام
+/leave       المغادرة قبل بدء اللعبة
+/startgame   بدء اللعبة (قائد الغرفة)
+/players     قائمة اللاعبين وأرقامهم
+/status      حالة الغرفة
+/attack N    اختيار هدف هجوم المافيا
+/protect N   حماية لاعب
+/investigate N  فحص لاعب
+/nominate N  ترشيح لاعب
+/defendant   اختيار المتهم (قائد الغرفة)
+/openvote    فتح التصويت (قائد الغرفة)
+/vote N      التصويت للمتهم
+/finishvote  إنهاء التصويت (قائد الغرفة)
+/resolve     حسم الليل (قائد الغرفة)
+/newgame     فتح جولة جديدة بعد انتهاء السابقة
+/rules       القواعد والأوامر
+```
 
-Foundation in progress. The core domain engine and tests are being added. No Telegram token or Cloudflare secret belongs in source control.
+تُستخدم أرقام اللاعبين الظاهرة في `/players` بدل نشر Telegram IDs.
 
-## Local development
-
+## التحقق محليًا
+يتطلب Node.js 20 أو أحدث:
 ```sh
 npm install
 npm test
 npm run check
 ```
 
-Copy `.dev.vars.example` to `.dev.vars` and fill in local values before running the Worker. Never commit `.dev.vars`.
+## إعداد Cloudflare
+1. أنشئ قاعدة D1 باسم `mafia-betrayal`.
+2. ضع معرّفها الحقيقي مكان `REPLACE_WITH_D1_DATABASE_ID` في `wrangler.toml`.
+3. طبّق الترحيلات: `npx wrangler d1 migrations apply mafia-betrayal --remote`.
+4. أضف الأسرار باستخدام `npx wrangler secret put TELEGRAM_BOT_TOKEN` و`npx wrangler secret put TELEGRAM_WEBHOOK_SECRET`.
+5. انشر باستخدام `npx wrangler deploy`.
+6. اضبط Telegram webhook على `https://<worker-subdomain>/telegram/webhook` مع secret token نفسه.
 
-## Deployment
+## ما لم يكتمل بعد
+هذه نسخة تطوير أولية وليست جاهزة للنشر العام. ما زالت هناك حاجة إلى:
+- ربط كل انتقال بجدول زمني آلي كامل واستعادة المرحلة بعد انتهاء Alarm
+- تفعيل قدرات الأدوار المتبقية، ومهمات المستقلين والاقتصاد والأحداث
+- تحسين معالجة انقطاع اللاعبين وفشل إرسال الرسائل بعد بدء الجولة
+- إضافة اختبارات محاكاة توازن آلاف الجولات
+- تشغيل CI والتحقق من نتائج الاختبارات على GitHub قبل النشر
 
-Create the D1 database and configure its ID in `wrangler.toml`, then apply migrations and set Worker secrets using Wrangler. See the deployment section below once the first playable flow is complete.
+لا تضع أي Bot Token أو Cloudflare secret في المستودع.
