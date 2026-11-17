@@ -37,3 +37,12 @@ test("mafia coordinates one shared attack instead of killing multiple targets",(
  assert.deepEqual(result.deaths,["c"]);
  assert.equal(g.players.find(p=>p.id==="d").alive,true);
 });
+
+test("spy receives only whether the monitored target acted at night",()=>{
+ const g=game();
+ g.players.push({id:"s",role:"spy",faction:"mafia",alive:true,health:100,armor:0});
+ submitNightAction(g,"s","monitor","c");
+ submitNightAction(g,"m","attack","c2");
+ const result=resolveNight(g);
+ assert.deepEqual(result.monitoring,[{actorId:"s",targetId:"c",active:false}]);
+});
