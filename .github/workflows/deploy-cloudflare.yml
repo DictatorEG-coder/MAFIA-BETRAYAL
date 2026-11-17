@@ -64,13 +64,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: wrangler deploy
 
-      - name: Set Telegram webhook
+      - name: Set Telegram webhook (optional on first deployment)
+        if: env.TELEGRAM_WEBHOOK_URL != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           TELEGRAM_WEBHOOK_URL: ${{ secrets.TELEGRAM_WEBHOOK_URL }}
         run: |
-          test -n "$TELEGRAM_WEBHOOK_URL" || (echo "Missing TELEGRAM_WEBHOOK_URL secret (full /telegram/webhook URL)" && exit 1)
           curl --fail --silent --show-error \
             --request POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
             --data-urlencode "url=${TELEGRAM_WEBHOOK_URL}" \
