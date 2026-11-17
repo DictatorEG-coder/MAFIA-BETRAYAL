@@ -72,6 +72,11 @@ export class RoomCoordinator {
       if (!state.creatorId || state.creatorId !== String(actorId)) return Response.json({ error:"creator_only" }, { status:403 });
       const ids = Object.keys(state.players);
       if (ids.length < 5 || ids.length > 10) return Response.json({ error:"player_count", count:ids.length }, { status:400 });
+      if (this.env.DB) {
+        const placeholders=ids.map(()=>"?").join(",");
+        const active=await this.env.DB.prepare("SELECT p.telegram_id FROM players p JOIN rooms r ON r.room_id=p.room_id WHERE p.telegram_id IN ("+placeholders+") AND r.status='playing' AND p.room_id<>? LIMIT 1").bind(...ids,state.chatId).first();
+        if(active) return Response.json({error:"player_already_active",playerId:active.telegram_id},{status:409});
+      }
       const game = createGame(ids);
       state.status = "playing";
       state.game = game;
