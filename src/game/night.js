@@ -1,5 +1,5 @@
 import { getWinner } from "./win-conditions.js";
-const NIGHT_PERMISSIONS = { detective:["investigate"], doctor:["protect"], guard:["protect"], boss:["attack"], killer:["attack"], spy:["sabotage"] };
+const NIGHT_PERMISSIONS = { detective:["investigate"], doctor:["protect"], guard:["protect"], boss:["attack"], killer:["attack"], spy:["monitor"] };
 export function submitNightAction(game, actorId, action, targetId) {
  if(game.phase!=="night") throw new Error("Night actions are closed");
  const actor=game.players.find(p=>p.id===String(actorId)&&p.alive);
@@ -18,6 +18,10 @@ export function resolveNight(game) {
   const target=game.players.find(p=>p.id===a.targetId);
   return {actorId:a.actorId,targetId:a.targetId,result:target?.faction==="mafia"?"suspicious":"not_suspicious"};
  });
+ const monitoring=actions.filter(a=>a.action==="monitor").map(a=>({
+  actorId:a.actorId,targetId:a.targetId,
+  active:actions.some(other=>other.actorId===a.targetId&&other.action!=="monitor")
+ }));
  const counts=new Map();
  for(const a of actions.filter(a=>a.action==="attack")) counts.set(a.targetId,(counts.get(a.targetId)??0)+1);
  const max=counts.size?Math.max(...counts.values()):0;
@@ -31,5 +35,5 @@ export function resolveNight(game) {
  game.actions={}; game.winner=getWinner(game.players,game.round);
  if(game.winner){game.phase="ended";game.endedAt=Date.now();} else game.phase="day";
  game.stateVersion++;
- return {game,deaths,investigations,attackTarget};
+ return {game,deaths,investigations,monitoring,attackTarget};
 }
