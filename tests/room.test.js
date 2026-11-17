@@ -21,14 +21,14 @@ async function call(room,path,body) {
 test("lobby cannot start below five players",async()=>{
  const room=makeRoom();
  await call(room,"/join",{chatId:"-100",actor:{id:"1",name:"one"}});
- const response=await call(room,"/start",{});
+ const response=await call(room,"/start",{actorId:"1"});
  assert.equal(response.status,400);
  assert.equal((await response.json()).error,"player_count");
 });
 test("lobby prepares private chats and starts with secret role assignments",async()=>{
  const room=makeRoom();
  for(let i=1;i<=5;i++) await call(room,"/join",{chatId:"-100",actor:{id:String(i),name:"P"+i}});
- const prepared=await call(room,"/prepare",{});
+ const prepared=await call(room,"/prepare",{actorId:"1"});
  assert.equal(prepared.status,200);
  assert.equal((await prepared.json()).players.length,5);
  const started=await call(room,"/start",{});
