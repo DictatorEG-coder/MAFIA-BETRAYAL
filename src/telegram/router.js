@@ -13,7 +13,7 @@ const HELP = [
  "/myrole رقم_المجموعة — استرجاع دورك في الخاص",
  "/status — حالة الغرفة",
  "/newgame — فتح جولة جديدة بعد انتهاء السابقة (قائد الغرفة فقط)",
- "الأفعال السرية في الخاص: /attack رقم_المجموعة رقم_اللاعب، /protect، /investigate، /nominate، /vote",
+ "الأفعال السرية في الخاص: /attack رقم_المجموعة رقم_اللاعب، /protect، /investigate، /spy، /nominate، /vote",
  "أوامر قائد الغرفة: /resolve، /defendant، /openvote، /finishvote",
  "/rules — عرض هذه القائمة"
 ].join("\n");
@@ -23,7 +23,7 @@ const ROLE_OBJECTIVES={
  detective:"افحص لاعبًا ليلًا لتعرف إن كان من المافيا.",doctor:"احمِ لاعبًا كل ليلة من هجوم المافيا.",guard:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
  avenger:"دورك الدفاع عن المدينة؛ قدرتك الخاصة لم تُفعّل بعد.",citizen:"راقب النقاش وصوّت بحذر لإقصاء التهديدات.",
  boss:"نسّق هجوم المافيا ليلًا وابقَ متخفيًا.",killer:"شارك المافيا في اختيار هدف الهجوم الليلي.",
- spy:"أنت من المافيا؛ قدرة التخريب لم تُفعّل بعد.",survivor:"هدفك البقاء حيًا حتى نهاية الجولة الرابعة.",gambler:"أنت مستقل؛ مهمتك السرية لم تُفعّل بعد."
+ spy:"أنت من المافيا؛ قدرة التخريب لم تُفعّل بعد.",survivor:"هدفك البقاء حيًا حتى نهاية الجولة الرابعة.",spy:"راقب لاعبًا ليلًا لتعرف هل قام بفعل أم بقي ساكنًا، دون كشف دوره.",gambler:"أنت مستقل؛ مهمتك السرية لم تُفعّل بعد."
 };
 async function roomCall(env,chatId,path,body) {
  const stub=env.ROOMS.get(env.ROOMS.idFromName(String(chatId)));
@@ -107,7 +107,7 @@ export async function routeUpdate(update,env) {
    const allies=data.allies?.length?"\nحلفاؤك: "+data.allies.join("، "):"";
    await sendMessage(env,chatId,"🎭 دورك: "+(ROLE_NAMES[data.role]??data.role)+"\nمهمتك: "+(ROLE_OBJECTIVES[data.role]??"ابقَ على قيد الحياة.")+allies); return;
   }
-  const privateActions={"/attack":"attack","/protect":"protect","/investigate":"investigate","/nominate":"nominate","/vote":"vote"};
+  const privateActions={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote"};
   if(privateActions[command]) {
    const roomId=parts[1]; const slot=Number(parts[2]);
    if(!roomId || !/^-?[0-9]+$/.test(roomId) || !Number.isInteger(slot) || slot<1 || slot>10) {
@@ -156,12 +156,12 @@ export async function routeUpdate(update,env) {
   for(const p of data.players) {
    const allies=["boss","killer","spy"].includes(p.role)?"\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
    try {
-    await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\nدورك: "+ROLE_NAMES[p.role]+"\nمهمتك: "+ROLE_OBJECTIVES[p.role]+allies+"\nالأفعال السرية تُرسل هنا في الخاص. رقم المجموعة: "+chatId+"\nاسترجاع الدور: /myrole "+chatId+"\nمثال: /attack "+chatId+" 2\nلا تكشف دورك لأي لاعب.");
+    await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\nدورك: "+ROLE_NAMES[p.role]+"\nمهمتك: "+ROLE_OBJECTIVES[p.role]+allies+"\nالأفعال السرية تُرسل هنا في الخاص. رقم المجموعة: "+chatId+"\nاسترجاع الدور: /myrole "+chatId+"\nمثال: /attack "+chatId+" 2 أو /spy "+chatId+" 2\nلا تكشف دورك لأي لاعب.");
    } catch { deliveryFailures.push(p.name); }
   }
   await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. استخدم /players لمعرفة أرقام اللاعبين."+(deliveryFailures.length?"\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، ")+" — يمكن لكل لاعب استرجاع دوره في الخاص عبر /myrole "+chatId:"")); return;
  }
- const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/nominate":"nominate","/vote":"vote"};
+ const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote"};
  if(actionCommands[command]) {
   await sendMessage(env,chatId,"للحفاظ على سرية الأفعال والتصويت، أرسل هذا الأمر في الخاص مع رقم المجموعة ورقم اللاعب. مثال: "+command+" "+chatId+" 2"); return;
  }
@@ -172,6 +172,10 @@ export async function routeUpdate(update,env) {
   for(const item of data.investigations??[]) {
    const target=players.find(p=>p.id===item.targetId);
    await sendMessage(env,item.actorId,"نتيجة التحقيق في "+(target?.name??"اللاعب") +": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه"));
+  }
+  for(const item of data.monitoring??[]) {
+   const target=players.find(p=>p.id===item.targetId);
+   await sendMessage(env,item.actorId,"نتيجة المراقبة في "+(target?.name??"اللاعب")+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له."));
   }
   const dead=(data.deaths??[]).map(id=>players.find(p=>p.id===id)?.name??"لاعب");
   await sendMessage(env,chatId,(dead.length?"انتهى الليل. المقصى: "+dead.join("، "):"انتهى الليل دون إقصاء.")+"\nالمرحلة التالية: "+data.phase);
