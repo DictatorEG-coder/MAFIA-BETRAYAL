@@ -9,7 +9,7 @@ const HELP = [
  "/players — عرض اللاعبين وأرقامهم",
  "/status — حالة الغرفة",
  "/newgame — فتح جولة جديدة بعد انتهاء السابقة (قائد الغرفة فقط)",
- "أوامر اللعب: /attack رقم، /protect رقم، /investigate رقم، /nominate رقم، /vote رقم",
+ "الأفعال السرية في الخاص: /attack رقم_المجموعة رقم_اللاعب، /protect، /investigate، /nominate، /vote",
  "أوامر قائد الغرفة: /resolve، /defendant، /openvote، /finishvote",
  "/rules — عرض هذه القائمة"
 ].join("\n");
