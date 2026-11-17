@@ -65,3 +65,16 @@ test("room creator can reopen an ended room without losing its roster",async()=>
  assert.equal(status.status,"lobby");
  assert.equal(status.players,1);
 });
+
+test("roles stay hidden from the room until the game ends and private lookup is self-only",async()=>{
+ const room=makeRoom();
+ for(let i=1;i<=5;i++) await call(room,"/join",{chatId:"-100",actor:{id:String(i),name:"P"+i}});
+ await call(room,"/start",{actorId:"1"});
+ const publicResult=await call(room,"/result");
+ assert.equal(publicResult.status,409);
+ const ownRole=await call(room,"/myrole",{actorId:"1"});
+ assert.equal(ownRole.status,200);
+ assert.ok((await ownRole.json()).role);
+ const outsider=await call(room,"/myrole",{actorId:"99"});
+ assert.equal(outsider.status,403);
+});
