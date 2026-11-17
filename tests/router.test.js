@@ -48,14 +48,36 @@ test("Arabic أنا joins the lobby and receives inline join/start buttons",asyn
  } finally {globalThis.fetch=previous;}
 });
 
-test("تفاعل calls Telegram setMessageReaction",async()=>{
+
+test("owner reaction targets the replied-to message and uses selected emoji",async()=>{
  const previous=globalThis.fetch; let payload;
  globalThis.fetch=async(url,options)=>{payload={method:String(url).split("/").pop(),body:JSON.parse(options.body)};return Response.json({ok:true,result:true});};
  try {
-  const env={TELEGRAM_BOT_TOKEN:"test",ROOMS:{idFromName:id=>id,get:()=>({})}};
-  await routeUpdate({message:{message_id:44,chat:{id:-10077,type:"supergroup"},from:{id:111},text:"تفاعل"}},env);
+  const env={TELEGRAM_BOT_TOKEN:"test",OWNER_TELEGRAM_ID:"5965488029"};
+  await routeUpdate({message:{message_id:45,reply_to_message:{message_id:44},chat:{id:-10077,type:"supergroup"},from:{id:5965488029},text:"تفاعل ❤️"}},env);
   assert.equal(payload.method,"setMessageReaction");
   assert.equal(payload.body.message_id,44);
-  assert.equal(payload.body.reaction.length,1);
+  assert.deepEqual(payload.body.reaction,[{type:"emoji",emoji:"❤️"}]);
+ } finally { globalThis.fetch=previous; }
+});
+
+test("reaction feature rejects non-owner users",async()=>{
+ const previous=globalThis.fetch; const sent=[]; let reactionCalls=0;
+ globalThis.fetch=async(url,options)=>{const method=String(url).split("/").pop(); if(method==="setMessageReaction") reactionCalls++; sent.push(JSON.parse(options.body)); return Response.json({ok:true,result:true});};
+ try {
+  const env={TELEGRAM_BOT_TOKEN:"test",OWNER_TELEGRAM_ID:"5965488029"};
+  await routeUpdate({message:{message_id:45,reply_to_message:{message_id:44},chat:{id:-10077,type:"supergroup"},from:{id:111},text:"تفاعل 🔥"}},env);
+  assert.equal(reactionCalls,0);
+  assert.match(sent[0].text,/مالك البوت فقط/);
+ } finally { globalThis.fetch=previous; }
+});
+
+test("reaction command requires replying to a target message",async()=>{
+ const previous=globalThis.fetch; const sent=[];
+ globalThis.fetch=async(url,options)=>{sent.push(JSON.parse(options.body));return Response.json({ok:true,result:{message_id:1}});};
+ try {
+  const env={TELEGRAM_BOT_TOKEN:"test",OWNER_TELEGRAM_ID:"5965488029"};
+  await routeUpdate({message:{message_id:45,chat:{id:-10077,type:"supergroup"},from:{id:5965488029},text:"تفاعل 🔥"}},env);
+  assert.match(sent[0].text,/ترد على الرسالة/);
  } finally {globalThis.fetch=previous;}
 });
