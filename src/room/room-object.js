@@ -1,7 +1,7 @@
 import { createGame } from "../game/engine.js";
 import { resolveNight, submitNightAction } from "../game/night.js";
 import { nominate, selectDefendant } from "../game/day.js";
-import { castVote, finishVoting } from "../game/engine.js";
+import { castVote, finishVoting, avenge } from "../game/engine.js";
 import { sendMessage } from "../telegram/api.js";
 
 export class RoomCoordinator {
@@ -156,6 +156,26 @@ export class RoomCoordinator {
       if(state.game.phase!=="ended") await this.ctx.storage.setAlarm(state.deadline);
       else await this.ctx.storage.deleteAlarm?.();
       return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,monitoring:result.monitoring,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
+    }
+    if (url.pathname === "/avenge" && request.method === "POST") {
+      const {actorId,targetId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});
+      try {
+        const result=avenge(state.game,actorId,targetId);
+        if(state.game.phase==="ended") state.status="ended";
+        await this.ctx.storage.put("room",state);
+        if(state.game.phase==="ended") {
+          await this.ctx.storage.deleteAlarm?.();
+          if(this.env.DB) {
+            await this.env.DB.prepare("UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?")
+              .bind(new Date(state.game.endedAt).toISOString(),JSON.stringify(state.game.winner),state.game.id).run();
+            await this.env.DB.prepare("UPDATE rooms SET status='ended',updated_at=? WHERE room_id=?")
+              .bind(new Date().toISOString(),state.chatId).run();
+          }
+        }
+        return Response.json({ok:true,targetId:result.targetId,winner:result.winner,phase:state.game.phase});
+      } catch(e) { return Response.json({error:e.message},{status:400}); }
     }
     if (url.pathname === "/nominate" && request.method === "POST") {
       const {actorId,targetId}=await request.json();
