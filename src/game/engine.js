@@ -1,12 +1,15 @@
 import { assignRoles, ROLE_FACTIONS } from "./roles.js";
 import { resolveVote } from "./voting.js";
 import { getWinner } from "./win-conditions.js";
+import { assignGamblerMission, evaluateGamblerMission } from "./gambler.js";
 
 export function createGame(playerIds, random = Math.random, now = Date.now()) {
   const roles = assignRoles(playerIds, random);
   const players = Object.entries(roles).map(([id, role]) => ({
     id, role, faction: ROLE_FACTIONS[role], alive: true, health: 100, armor: 0
   }));
+  const gambler=players.find(p=>p.role==="gambler");
+  if(gambler) gambler.mission=assignGamblerMission(random);
   return {
     id: crypto.randomUUID(), phase: "night", round: 1, stateVersion: 1,
     startedAt: now, players, votes: {}, actions: {}, winner: null, endedAt: null
@@ -43,18 +46,29 @@ export function castVote(game, voterId, targetId) {
 export function finishVoting(game) {
   if (game.phase !== "voting") throw new Error("Voting is not open");
   const alive = game.players.filter(p => p.alive).map(p => p.id);
+  const previousVotes={...game.votes};
+  const previousNominations={...(game.nominations??{})};
+  const previousDefendant=game.defendant;
   const result = resolveVote(game.votes, alive);
   if (result.eliminated) {
     const player = game.players.find(p => p.id === result.eliminated);
     player.alive = false;
     player.health = 0;
   }
+  const gambler=game.players.find(p=>p.role==="gambler"&&p.alive);
+  const gamblerWon=gambler && evaluateGamblerMission(gambler.mission,{
+    alive:gambler.alive,
+    nominated:previousNominations[gambler.id]===previousDefendant,
+    votedForEliminated:Boolean(result.eliminated&&previousVotes[gambler.id]===result.eliminated)
+  });
   game.phase = "night";
   game.round++;
   game.votes = {};
   game.nominations = {};
   game.defendant = null;
-  game.winner = getWinner(game.players, game.round - 1);
+  if(gamblerWon) game.winner={winner:"gambler",reason:"secret_mission_completed",playerId:gambler.id};
+  else if(gambler) gambler.mission=assignGamblerMission(Math.random,gambler.mission);
+  game.winner = game.winner ?? getWinner(game.players, game.round - 1);
   if (game.winner) {
     game.phase = "ended";
     game.endedAt = Date.now();
