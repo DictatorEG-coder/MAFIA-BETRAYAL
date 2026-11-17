@@ -3,6 +3,7 @@ import { resolveNight, submitNightAction } from "../game/night.js";
 import { nominate, selectDefendant } from "../game/day.js";
 import { castVote, finishVoting, avenge } from "../game/engine.js";
 import { sendMessage } from "../telegram/api.js";
+import { GAMBLER_MISSION_TEXT, gamblerMissionText } from "../game/gambler.js";
 
 export class RoomCoordinator {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
@@ -94,7 +95,7 @@ export class RoomCoordinator {
       await this.ctx.storage.put("room", state);
       await this.ctx.storage.setAlarm(state.deadline);
       await this.persistGameStart(state.chatId,game);
-      return Response.json({ ok:true, gameId:game.id, players:ids.map(id=>({id,name:state.players[id].name,role:game.players.find(p=>p.id===id).role})), round:game.round });
+      return Response.json({ ok:true, gameId:game.id, players:ids.map(id=>({id,name:state.players[id].name,role:game.players.find(p=>p.id===id).role,mission:game.players.find(p=>p.id===id).mission??null})), round:game.round });
     }
     if (url.pathname === "/newgame" && request.method === "POST") {
       const {actorId}=await request.json();
@@ -238,7 +239,8 @@ export class RoomCoordinator {
               .bind("ended",new Date().toISOString(),state.chatId).run();
           }
         }
-        return Response.json({ok:true,eliminated:result.eliminated,reason:result.reason,phase:game.phase,round:game.round,winner:game.winner});
+        const gambler=game.players.find(p=>p.role==="gambler"&&p.alive);
+        return Response.json({ok:true,eliminated:result.eliminated,reason:result.reason,phase:game.phase,round:game.round,winner:game.winner,gamblerId:gambler?.id??null,gamblerMission:gambler?.mission??null});
       } catch(e){ return Response.json({error:e.message},{status:400}); }
     }
     if (url.pathname === "/schedule" && request.method === "POST") {
@@ -297,6 +299,11 @@ export class RoomCoordinator {
     } else if(game.phase==="voting") {
       const completed=finishVoting(game);
       state.game=completed.game;
+      const activeGambler=completed.game.players.find(p=>p.role==="gambler"&&p.alive);
+      if(activeGambler?.mission && this.env.TELEGRAM_BOT_TOKEN) {
+        try { await sendMessage(this.env,activeGambler.id,"🎲 مهمتك السرية الجديدة لهذا الدور: "+gamblerMissionText(activeGambler.mission)); }
+        catch(error) { console.error("gambler_mission_delivery_failed",error?.message??"unknown"); }
+      }
       if(completed.game.phase==="ended") {
         state.status="ended";
         announcement=completed.result.eliminated
