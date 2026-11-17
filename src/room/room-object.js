@@ -6,6 +6,13 @@ import { castVote, finishVoting } from "../game/engine.js";
 export class RoomCoordinator {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
 
+  async schedulePhase(state, seconds) {
+    state.deadline = Date.now() + seconds * 1000;
+    state.stateVersion++;
+    await this.ctx.storage.put("room", state);
+    await this.ctx.storage.setAlarm(state.deadline);
+  }
+
   async persistJoin(chatId, actor, created) {
     if (!this.env.DB) return;
     const now = new Date().toISOString();
@@ -82,7 +89,9 @@ export class RoomCoordinator {
       state.status = "playing";
       state.game = game;
       state.stateVersion++;
+      state.deadline = Date.now() + 90_000;
       await this.ctx.storage.put("room", state);
+      await this.ctx.storage.setAlarm(state.deadline);
       await this.persistGameStart(state.chatId,game);
       return Response.json({ ok:true, gameId:game.id, players:ids.map(id=>({id,name:state.players[id].name,role:game.players.find(p=>p.id===id).role})), round:game.round });
     }
@@ -134,6 +143,7 @@ export class RoomCoordinator {
       if (!state?.game || state.status !== "playing") return Response.json({error:"no_active_game"},{status:409});
       const result = resolveNight(state.game);
       state.stateVersion++;
+      if(state.game.phase!=="ended") state.deadline=Date.now()+90_000;
       if(state.game.phase==="ended") {
         state.status="ended";
         if(this.env.DB) {
@@ -142,6 +152,8 @@ export class RoomCoordinator {
         }
       }
       await this.ctx.storage.put("room",state);
+      if(state.game.phase!=="ended") await this.ctx.storage.setAlarm(state.deadline);
+      else await this.ctx.storage.deleteAlarm?.();
       return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
     }
     if (url.pathname === "/nominate" && request.method === "POST") {
@@ -156,7 +168,14 @@ export class RoomCoordinator {
       const state=await this.ctx.storage.get("room");
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if(!state?.game) return Response.json({error:"no_active_game"},{status:409});
-      try { const result=selectDefendant(state.game); await this.ctx.storage.put("room",state); return Response.json({ok:true,defendant:result.defendant}); }
+      try {
+        const result=selectDefendant(state.game);
+        if(result.defendant) state.deadline=Date.now()+30_000;
+        else state.deadline=Date.now()+90_000;
+        await this.ctx.storage.put("room",state);
+        await this.ctx.storage.setAlarm(state.deadline);
+        return Response.json({ok:true,defendant:result.defendant});
+      }
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
     if (url.pathname === "/open-voting" && request.method === "POST") {
@@ -165,7 +184,9 @@ export class RoomCoordinator {
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if(!state?.game || state.game.phase!=="defense") return Response.json({error:"defense_not_active"},{status:409});
       state.game.phase="voting"; state.game.stateVersion++; state.stateVersion++;
+      state.deadline=Date.now()+60_000;
       await this.ctx.storage.put("room",state);
+      await this.ctx.storage.setAlarm(state.deadline);
       return Response.json({ok:true,phase:"voting"});
     }
     if (url.pathname === "/vote" && request.method === "POST") {
@@ -184,7 +205,10 @@ export class RoomCoordinator {
         const {game,result}=finishVoting(state.game);
         state.game=game;
         if(game.phase==="ended") state.status="ended";
+        else state.deadline=Date.now()+90_000;
         await this.ctx.storage.put("room",state);
+        if(game.phase==="ended") await this.ctx.storage.deleteAlarm?.();
+        else await this.ctx.storage.setAlarm(state.deadline);
         if(game.phase==="ended") {
           if(this.env.DB) {
             await this.env.DB.prepare("UPDATE games SET status=?,ended_at=?,result_json=? WHERE game_id=?")
@@ -210,10 +234,82 @@ export class RoomCoordinator {
 
   async alarm() {
     const state=await this.ctx.storage.get("room");
-    if(!state||state.status==="lobby"||state.status==="ended") return;
-    if(state.deadline&&state.deadline<=Date.now()) {
-      state.phaseExpired=true; state.stateVersion++;
-      await this.ctx.storage.put("room",state);
+    if(!state||state.status!=="playing"||!state.game) return;
+    if(!state.deadline) return;
+    if(state.deadline>Date.now()) { await this.ctx.storage.setAlarm(state.deadline); return; }
+
+    const game=state.game;
+    let announcement="";
+    if(game.phase==="night") {
+      const result=resolveNight(game);
+      const names=id=>state.players[id]?.name??"لاعب";
+      announcement=result.deaths.length
+        ?"انتهى الليل. تم إقصاء: "+result.deaths.map(names).join("، ")
+        :"انتهى الليل دون إقصاء.";
+      if(game.phase==="ended") {
+        state.status="ended";
+        announcement+="\\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
+      } else {
+        game.phase="day";
+        state.deadline=Date.now()+90_000;
+        announcement+="\\nبدأ النهار. أمامكم 90 ثانية للنقاش.";
+      }
+    } else if(game.phase==="day") {
+      game.phase="nomination";
+      state.deadline=Date.now()+60_000;
+      announcement="انتهى النقاش. أمامكم 60 ثانية للترشيح السري: /nominate رقم_المجموعة رقم_اللاعب";
+    } else if(game.phase==="nomination") {
+      const selected=selectDefendant(game);
+      if(selected.defendant) {
+        state.deadline=Date.now()+30_000;
+        announcement="انتهى الترشيح. بدأت مهلة الدفاع، 30 ثانية.";
+      } else {
+        game.phase="night";
+        game.round++;
+        state.deadline=Date.now()+90_000;
+        announcement="لم يُرشح أحد. يبدأ الليل التالي.";
+      }
+    } else if(game.phase==="defense") {
+      game.phase="voting";
+      state.deadline=Date.now()+60_000;
+      announcement="انتهى الدفاع. بدأ التصويت السري لمدة 60 ثانية: /vote رقم_المجموعة رقم_اللاعب";
+    } else if(game.phase==="voting") {
+      const completed=finishVoting(game);
+      state.game=completed.game;
+      if(completed.game.phase==="ended") {
+        state.status="ended";
+        announcement=completed.result.eliminated
+          ?"انتهى التصويت وتم إقصاء "+(state.players[completed.result.eliminated]?.name??"لاعب")+"."
+          :"انتهى التصويت دون إقصاء.";
+        announcement+="\\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
+      } else {
+        state.deadline=Date.now()+90_000;
+        announcement=completed.result.eliminated
+          ?"تم إقصاء "+(state.players[completed.result.eliminated]?.name??"لاعب")+". يبدأ الليل التالي."
+          :"لم يُقصَ أحد. يبدأ الليل التالي.";
+      }
+    } else {
+      return;
+    }
+
+    game.stateVersion=(game.stateVersion??0)+1;
+    state.stateVersion=(state.stateVersion??0)+1;
+    if(state.status==="ended") {
+      state.deadline=null;
+      await this.ctx.storage.deleteAlarm?.();
+      if(this.env.DB) {
+        await this.env.DB.prepare("UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?")
+          .bind(new Date(game.endedAt??Date.now()).toISOString(),JSON.stringify(game.winner),game.id).run();
+        await this.env.DB.prepare("UPDATE rooms SET status='ended',updated_at=? WHERE room_id=?")
+          .bind(new Date().toISOString(),state.chatId).run();
+      }
+    } else {
+      await this.ctx.storage.setAlarm(state.deadline);
+    }
+    await this.ctx.storage.put("room",state);
+    if(this.env.TELEGRAM_BOT_TOKEN) {
+      try { await sendMessage(this.env,state.chatId,announcement); }
+      catch(error) { console.error("phase_announcement_failed",error?.message??"unknown"); }
     }
   }
 }
