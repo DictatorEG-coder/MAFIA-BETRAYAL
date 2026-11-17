@@ -73,6 +73,13 @@ export class RoomCoordinator {
       try { const result=selectDefendant(state.game); await this.ctx.storage.put("room",state); return Response.json({ok:true,defendant:result.defendant}); }
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
+    if (url.pathname === "/open-voting" && request.method === "POST") {
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game || state.game.phase!=="defense") return Response.json({error:"defense_not_active"},{status:409});
+      state.game.phase="voting"; state.game.stateVersion++; state.stateVersion++;
+      await this.ctx.storage.put("room",state);
+      return Response.json({ok:true,phase:"voting"});
+    }
     if (url.pathname === "/vote" && request.method === "POST") {
       const {actorId,targetId}=await request.json();
       const state=await this.ctx.storage.get("room");
