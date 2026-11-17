@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createGame, castVote } from "../src/game/engine.js";
+import { createGame, castVote, avenge } from "../src/game/engine.js";
 
 test("game initializes with private roles and stable player state", () => {
   const game = createGame(["1","2","3","4","5"], () => 0.1);
@@ -24,4 +24,18 @@ test("secret ballot accepts votes only for the selected defendant",()=>{
  assert.throws(()=>castVote(game,"2","2"),/Invalid vote/);
  castVote(game,"1","2");
  assert.equal(game.votes["1"],"2");
+});
+
+test("avenger can eliminate one target only after being eliminated",()=>{
+ const game={phase:"day",round:2,stateVersion:1,players:[
+  {id:"a",role:"avenger",faction:"city",alive:false,health:0},
+  {id:"m",role:"boss",faction:"mafia",alive:true,health:100},
+  {id:"c",role:"citizen",faction:"city",alive:true,health:100},
+  {id:"d",role:"doctor",faction:"city",alive:true,health:100},
+  {id:"s",role:"survivor",faction:"independent",alive:true,health:100}
+ ]};
+ assert.throws(()=>avenge(game,"c","m"),/must be eliminated/);
+ assert.equal(avenge(game,"a","m").targetId,"m");
+ assert.equal(game.players.find(p=>p.id==="m").alive,false);
+ assert.throws(()=>avenge(game,"a","c"),/already used/);
 });
