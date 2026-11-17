@@ -1,5 +1,5 @@
 import { createGame } from "../game/engine.js";
-import { resolveNight } from "../game/night.js";
+import { resolveNight, submitNightAction } from "../game/night.js";
 import { nominate, selectDefendant } from "../game/day.js";
 import { castVote, finishVoting } from "../game/engine.js";
 
@@ -26,15 +26,6 @@ export class RoomCoordinator {
     ).bind(game.id,String(roomId),"playing",now).run();
   }
 
-  async persistGameEnd(game) {
-    if (!this.env.DB) return;
-    await this.env.DB.prepare(
-      "UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?"
-    ).bind(new Date(game.endedAt ?? Date.now()).toISOString(),JSON.stringify(game.winner),game.id).run();
-    await this.env.DB.prepare("UPDATE rooms SET status='ended',updated_at=? WHERE room_id=?")
-      .bind(new Date().toISOString(),String(game.roomId ?? "")).run();
-  }
-
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/join" && request.method === "POST") {
@@ -55,6 +46,7 @@ export class RoomCoordinator {
       const state = await this.ctx.storage.get("room");
       if (!state || state.status !== "lobby") return Response.json({ error:"not_in_lobby" }, { status:409 });
       delete state.players[String(actorId)];
+      if (this.env.DB) await this.env.DB.prepare("DELETE FROM players WHERE room_id=? AND telegram_id=?").bind(state.chatId,String(actorId)).run();
       if (state.creatorId === String(actorId)) state.creatorId = Object.keys(state.players)[0] ?? null;
       state.stateVersion++;
       await this.ctx.storage.put("room", state);
@@ -88,13 +80,27 @@ export class RoomCoordinator {
       const state = await this.ctx.storage.get("room");
       return Response.json({ status:state?.status ?? "empty", players:Object.keys(state?.players ?? {}).length, phase:state?.game?.phase ?? null, round:state?.game?.round ?? null });
     }
+    if (url.pathname === "/night/action" && request.method === "POST") {
+      const {actorId,action,targetId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});
+      try { submitNightAction(state.game,actorId,action,targetId); await this.ctx.storage.put("room",state); return Response.json({ok:true}); }
+      catch(e){ return Response.json({error:e.message},{status:400}); }
+    }
     if (url.pathname === "/night/resolve" && request.method === "POST") {
       const state = await this.ctx.storage.get("room");
       if (!state?.game || state.status !== "playing") return Response.json({error:"no_active_game"},{status:409});
       const result = resolveNight(state.game);
       state.stateVersion++;
+      if(state.game.phase==="ended") {
+        state.status="ended";
+        if(this.env.DB) {
+          await this.env.DB.prepare("UPDATE games SET status=?,ended_at=?,result_json=? WHERE game_id=?").bind("ended",new Date(state.game.endedAt).toISOString(),JSON.stringify(state.game.winner),state.game.id).run();
+          await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?").bind("ended",new Date().toISOString(),state.chatId).run();
+        }
+      }
       await this.ctx.storage.put("room",state);
-      return Response.json({ok:true,deaths:result.deaths,phase:state.game.phase,round:state.game.round});
+      return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
     }
     if (url.pathname === "/nominate" && request.method === "POST") {
       const {actorId,targetId}=await request.json();
