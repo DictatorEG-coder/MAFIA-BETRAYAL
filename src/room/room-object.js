@@ -11,7 +11,7 @@ export class RoomCoordinator {
     if (url.pathname === "/join" && request.method === "POST") {
       const { chatId, actor } = await request.json();
       if (!chatId || !actor?.id) return Response.json({ error: "invalid_input" }, { status: 400 });
-      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), status:"lobby", players:{}, stateVersion:0 };
+      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };
       if (state.chatId !== String(chatId)) return Response.json({ error:"room_mismatch" }, { status:409 });
       if (state.status !== "lobby") return Response.json({ error:"game_in_progress" }, { status:409 });
       if (Object.keys(state.players).length >= 10 && !state.players[String(actor.id)]) return Response.json({ error:"room_full" }, { status:409 });
@@ -25,6 +25,7 @@ export class RoomCoordinator {
       const state = await this.ctx.storage.get("room");
       if (!state || state.status !== "lobby") return Response.json({ error:"not_in_lobby" }, { status:409 });
       delete state.players[String(actorId)];
+      if (state.creatorId === String(actorId)) state.creatorId = Object.keys(state.players)[0] ?? null;
       state.stateVersion++;
       await this.ctx.storage.put("room", state);
       return Response.json({ ok:true, players:Object.keys(state.players).length });
@@ -37,8 +38,10 @@ export class RoomCoordinator {
       return Response.json({ok:true,players:ids.map(id=>({id,name:state.players[id].name}))});
     }
     if (url.pathname === "/start" && request.method === "POST") {
+      const { actorId } = await request.json();
       const state = await this.ctx.storage.get("room");
       if (!state || state.status !== "lobby") return Response.json({ error:"not_in_lobby" }, { status:409 });
+      if (!state.creatorId || state.creatorId !== String(actorId)) return Response.json({ error:"creator_only" }, { status:403 });
       const ids = Object.keys(state.players);
       if (ids.length < 5 || ids.length > 10) return Response.json({ error:"player_count", count:ids.length }, { status:400 });
       const game = createGame(ids);
