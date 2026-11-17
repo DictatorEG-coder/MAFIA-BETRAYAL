@@ -6,7 +6,8 @@ function game() {
  return { phase:"night", stateVersion:1, actions:{}, players:[
   {id:"d",role:"doctor",faction:"city",alive:true,health:100,armor:0},
   {id:"m",role:"boss",faction:"mafia",alive:true,health:100,armor:0},
-  {id:"c",role:"citizen",faction:"city",alive:true,health:100,armor:0}
+  {id:"c",role:"citizen",faction:"city",alive:true,health:100,armor:0},
+  {id:"c2",role:"citizen",faction:"city",alive:true,health:100,armor:0}
  ]};
 }
 test("doctor protection prevents a night elimination",()=>{
