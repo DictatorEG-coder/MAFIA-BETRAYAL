@@ -263,9 +263,14 @@ export class RoomCoordinator {
 
     const game=state.game;
     let announcement="";
+    let privateNightReports=[];
     if(game.phase==="night") {
       const result=resolveNight(game);
       const names=id=>state.players[id]?.name??"لاعب";
+      privateNightReports=[
+        ...(result.investigations??[]).map(item=>({id:item.actorId,text:"نتيجة التحقيق في "+names(item.targetId)+": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه")})),
+        ...(result.monitoring??[]).map(item=>({id:item.actorId,text:"نتيجة المراقبة في "+names(item.targetId)+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له.")}))
+      ];
       announcement=result.deaths.length
         ?"انتهى الليل. تم إقصاء: "+result.deaths.map(names).join("، ")
         :"انتهى الليل دون إقصاء.";
@@ -323,6 +328,9 @@ export class RoomCoordinator {
     game.stateVersion=(game.stateVersion??0)+1;
     state.stateVersion=(state.stateVersion??0)+1;
     if(state.status==="ended") {
+      const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+      const reveal=game.players.map(player=>(state.players[player.id]?.name??player.id)+" — "+(roleNames[player.role]??player.role)+(player.alive?" (باقٍ)":" (مقصى)"));
+      announcement+="\\nكشف الأدوار:\\n"+reveal.join("\\n");
       state.deadline=null;
       await this.ctx.storage.deleteAlarm?.();
       if(this.env.DB) {
@@ -336,6 +344,10 @@ export class RoomCoordinator {
     }
     await this.ctx.storage.put("room",state);
     if(this.env.TELEGRAM_BOT_TOKEN) {
+      for(const report of privateNightReports) {
+        try { await sendMessage(this.env,report.id,report.text); }
+        catch(error) { console.error("private_night_report_failed",error?.message??"unknown"); }
+      }
       try { await sendMessage(this.env,state.chatId,announcement); }
       catch(error) { console.error("phase_announcement_failed",error?.message??"unknown"); }
     }
