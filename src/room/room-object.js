@@ -92,6 +92,15 @@ export class RoomCoordinator {
       const alive=new Set(state.game?.players.filter(p=>p.alive).map(p=>p.id)??[]);
       return Response.json({players:Object.values(state.players).map((p,index)=>({slot:index+1,id:p.id,name:p.name,alive:state.game?alive.has(p.id):true}))});
     }
+    if (url.pathname === "/myrole" && request.method === "POST") {
+      const {actorId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});
+      const player=state.game.players.find(p=>p.id===String(actorId));
+      if(!player) return Response.json({error:"not_a_player"},{status:403});
+      const allies=player.faction==="mafia"?state.game.players.filter(p=>p.faction==="mafia"&&p.id!==player.id).map(p=>state.players[p.id]?.name??p.id):[];
+      return Response.json({role:player.role,allies});
+    }
     if (url.pathname === "/result") {
       const state=await this.ctx.storage.get("room");
       if(!state || state.status!=="ended") return Response.json({error:"game_not_ended"},{status:409});
