@@ -76,6 +76,12 @@ export class RoomCoordinator {
       await this.persistGameStart(state.chatId,game);
       return Response.json({ ok:true, gameId:game.id, players:ids.map(id=>({id,name:state.players[id].name,role:game.players.find(p=>p.id===id).role})), round:game.round });
     }
+    if (url.pathname === "/players") {
+      const state=await this.ctx.storage.get("room");
+      if(!state) return Response.json({players:[]});
+      const alive=new Set(state.game?.players.filter(p=>p.alive).map(p=>p.id)??[]);
+      return Response.json({players:Object.values(state.players).map((p,index)=>({slot:index+1,id:p.id,name:p.name,alive:state.game?alive.has(p.id):true}))});
+    }
     if (url.pathname === "/status") {
       const state = await this.ctx.storage.get("room");
       return Response.json({ status:state?.status ?? "empty", players:Object.keys(state?.players ?? {}).length, phase:state?.game?.phase ?? null, round:state?.game?.round ?? null });
