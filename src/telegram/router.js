@@ -1,8 +1,11 @@
-import { sendMessage } from "./api.js";
+import { sendMessage, telegramCall } from "./api.js";
 
 const HELP = [
  "🕯️ MAFIA: BETRAYAL — مدينة الغُراب",
  "/mafia — إنشاء غرفة، ومنشئها يصبح قائدها",
+ "اكتب أنا أو اضغط زر الانضمام — دخول الغرفة",
+ "ابدأ — بدء اللعبة (قائد الغرفة فقط)",
+ "تفاعل — تفاعل سريع على الرسالة",
  "/join — الانضمام إلى الغرفة",
  "/leave — مغادرة الانتظار",
  "/startgame — تجهيز الخاص وبدء اللعبة",
@@ -40,10 +43,34 @@ async function announceResult(env,chatId) {
  await sendMessage(env,chatId,"🏁 انتهت الجولة. الفائز: "+(names[data.winner?.winner]??data.winner?.winner??"غير محدد")+"\nكشف الأدوار:\n"+roles.join("\n"));
 }
 export async function routeUpdate(update,env) {
+ const callback=update?.callback_query;
+ if(callback?.message?.chat?.id && callback?.from?.id) {
+  await telegramCall(env,"answerCallbackQuery",{callback_query_id:callback.id});
+  const data=String(callback.data??"");
+  const text=data==="mb:join"?"أنا":data==="mb:start"?"ابدأ":"";
+  if(text) return routeUpdate({message:{chat:callback.message.chat,from:callback.from,text}},env);
+  return;
+ }
  const message=update?.message;
  if(!message?.chat?.id||!message?.from?.id) return;
  const raw=String(message.text??"").trim();
- if(!raw.startsWith("/")) return;
+ const normalized=raw.replace(/[أإآ]/g,"ا");
+ if(!raw.startsWith("/")) {
+  if(!message.chat.type || message.chat.type==="private") return;
+  if(["انا","أنا"].includes(raw) || normalized==="انا") {
+   return routeUpdate({message:{...message,text:"/join"}},env);
+  }
+  if(normalized==="ابدأ" || normalized.toLowerCase()==="ابدا") {
+   return routeUpdate({message:{...message,text:"/startgame"}},env);
+  }
+  if(normalized==="تفاعل") {
+   const reactions=["🔥","👍","❤️","👏","🤝","⚡"];
+   const emoji=reactions[Math.floor(Math.random()*reactions.length)];
+   await telegramCall(env,"setMessageReaction",{chat_id:message.chat.id,message_id:message.message_id,reaction:[{type:"emoji",emoji}],is_big:true});
+   return;
+  }
+  return;
+ }
  const parts=raw.split(/\s+/);
  const command=parts[0].split("@")[0].toLowerCase();
  const arg=parts[1];
@@ -78,7 +105,7 @@ export async function routeUpdate(update,env) {
 
  if(command==="/mafia"||command==="/join") {
   const response=await roomCall(env,chatId,"/join",{chatId,actor}); const data=await response.json();
-  await sendMessage(env,chatId,response.ok?(command==="/mafia"?"🕯️ فُتحت غرفة الغُراب. ":"")+"انضممت إلى الغرفة. عدد اللاعبين: "+data.players+"/10":"تعذر الانضمام: "+(data.error??"خطأ")); return;
+  await sendMessage(env,chatId,response.ok?(command==="/mafia"?"🕯️ فُتحت غرفة الغُراب. ":"")+"انضممت إلى الغرفة. عدد اللاعبين: "+data.players+"/10\nاكتب «أنا» للانضمام، أو اضغط الزر. عندما يكتمل العدد، يكتب قائد الغرفة «ابدأ».":"تعذر الانضمام: "+(data.error??"خطأ"),response.ok?{reply_markup:{inline_keyboard:[[{text:"انضمام إلى اللعبة",callback_data:"mb:join"}],[{text:"ابدأ اللعبة (للقائد)",callback_data:"mb:start"}]]}}:{}); return;
  }
  if(command==="/leave") {
   const response=await roomCall(env,chatId,"/leave",{actorId:actor.id}); const data=await response.json();
@@ -96,7 +123,7 @@ export async function routeUpdate(update,env) {
   const players=await roster(env,chatId);
   await sendMessage(env,chatId,players.length?players.map(p=>p.slot+". "+p.name+(p.alive?"":" — مقصى")).join("\n"):"لا توجد غرفة بعد."); return;
  }
- if(command==="/startgame") {
+ if(command==="/startgame" || command==="/start") {
   const preflight=await roomCall(env,chatId,"/prepare",{actorId:actor.id}); const ready=await preflight.json();
   if(!preflight.ok) { await sendMessage(env,chatId,ready.error==="player_count"?"العدد الحالي "+ready.count+"؛ نحتاج من 5 إلى 10 لاعبين.":"تعذر تجهيز اللعبة: "+(ready.error??"خطأ")); return; }
   const failures=[];
