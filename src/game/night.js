@@ -24,9 +24,12 @@ export function resolveNight(game) {
  }));
  const counts=new Map();
  for(const a of actions.filter(a=>a.action==="attack")) counts.set(a.targetId,(counts.get(a.targetId)??0)+1);
+ const livingMafia=game.players.filter(p=>p.alive&&p.faction==="mafia").length;
  const max=counts.size?Math.max(...counts.values()):0;
  const leaders=[...counts].filter(([,n])=>n===max).map(([id])=>id);
- const attackTarget=leaders.length===1?leaders[0]:null;
+ // A target needs support from a strict majority of all living mafia,
+ // not merely a plurality of the members who happened to submit an action.
+ const attackTarget=leaders.length===1&&max>livingMafia/2?leaders[0]:null;
  const deaths=[];
  if(attackTarget&&!protectedIds.has(attackTarget)){
   const target=game.players.find(p=>p.id===attackTarget&&p.alive);
