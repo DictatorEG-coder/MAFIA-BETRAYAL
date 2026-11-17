@@ -30,3 +30,32 @@ test("group messages cannot expose a player's night action",async()=>{
   assert.equal(actionCalls,0);
  } finally { globalThis.fetch=previous; }
 });
+
+
+test("Arabic أنا joins the lobby and receives inline join/start buttons",async()=>{
+ const previous=globalThis.fetch; const sent=[];
+ const stub={async fetch(url,options){
+  if(new URL(url).pathname==="/join") return Response.json({ok:true,players:2});
+  throw new Error("Unexpected room request");
+ }};
+ globalThis.fetch=async(url,options)=>{sent.push(JSON.parse(options.body));return Response.json({ok:true,result:{message_id:1}});};
+ try {
+  const env={TELEGRAM_BOT_TOKEN:"test",ROOMS:{idFromName:id=>id,get:()=>stub}};
+  await routeUpdate({message:{chat:{id:-10077,type:"supergroup"},from:{id:111,first_name:"A"},text:"أنا"}},env);
+  assert.equal(sent[0].chat_id,"-10077");
+  assert.equal(sent[0].reply_markup.inline_keyboard[0][0].callback_data,"mb:join");
+  assert.equal(sent[0].reply_markup.inline_keyboard[1][0].callback_data,"mb:start");
+ } finally {globalThis.fetch=previous;}
+});
+
+test("تفاعل calls Telegram setMessageReaction",async()=>{
+ const previous=globalThis.fetch; let payload;
+ globalThis.fetch=async(url,options)=>{payload={method:String(url).split("/").pop(),body:JSON.parse(options.body)};return Response.json({ok:true,result:true});};
+ try {
+  const env={TELEGRAM_BOT_TOKEN:"test",ROOMS:{idFromName:id=>id,get:()=>({})}};
+  await routeUpdate({message:{message_id:44,chat:{id:-10077,type:"supergroup"},from:{id:111},text:"تفاعل"}},env);
+  assert.equal(payload.method,"setMessageReaction");
+  assert.equal(payload.body.message_id,44);
+  assert.equal(payload.body.reaction.length,1);
+ } finally {globalThis.fetch=previous;}
+});
