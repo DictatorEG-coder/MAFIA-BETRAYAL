@@ -18,6 +18,7 @@ const HELP = [
  "/rules — عرض هذه القائمة"
 ].join("\n");
 
+const GAMBLER_MISSION_TEXTS={survive:"ابقَ حيًا حتى نهاية الجولة الحالية.",nominate:"رشّح اللاعب الذي سيصبح المتهم.",vote:"صوّت للاعب الذي سيتم إقصاؤه."};
 const ROLE_NAMES={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
 const ROLE_OBJECTIVES={
  detective:"افحص لاعبًا ليلًا لتعرف إن كان من المافيا.",doctor:"احمِ لاعبًا كل ليلة من هجوم المافيا.",guard:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
@@ -201,6 +202,7 @@ export async function routeUpdate(update,env) {
   const response=await roomCall(env,chatId,"/vote/finish",{actorId:actor.id}); const data=await response.json();
   if(!response.ok) { await sendMessage(env,chatId,"تعذر إنهاء التصويت: "+(data.error??"خطأ")); return; }
   const players=await roster(env,chatId); const target=players.find(p=>p.id===data.eliminated);
+  if(data.gamblerId&&data.gamblerMission) await sendMessage(env,data.gamblerId,"🎲 مهمتك السرية الجديدة: "+(GAMBLER_MISSION_TEXTS[data.gamblerMission]??"أكمل مهمتك."));
   await sendMessage(env,chatId,data.eliminated?"تم إقصاء "+(target?.name??"لاعب")+". لن يُكشف دوره حتى نهاية الجولة.":"لم يُقصَ أحد ("+data.reason+").");
   if(data.phase==="ended") await announceResult(env,chatId);
   else await sendMessage(env,chatId,"تبدأ المرحلة الليلية التالية. أرسلوا أفعالكم السرية ثم استخدم قائد الغرفة /resolve.");
