@@ -55,3 +55,13 @@ test("only the room creator can prepare or start a game",async()=>{
  const start=await call(room,"/start",{actorId:"2"});
  assert.equal(start.status,403);
 });
+
+test("room creator can reopen an ended room without losing its roster",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{chatId:"-100",creatorId:"1",status:"ended",players:{"1":{id:"1",name:"P1"}},game:{phase:"ended"},stateVersion:9});
+ const response=await call(room,"/newgame",{actorId:"1"});
+ assert.equal(response.status,200);
+ const status=await (await call(room,"/status")).json();
+ assert.equal(status.status,"lobby");
+ assert.equal(status.players,1);
+});
