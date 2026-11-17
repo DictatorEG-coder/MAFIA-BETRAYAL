@@ -5,7 +5,7 @@ const HELP = [
  "/mafia — إنشاء غرفة، ومنشئها يصبح قائدها",
  "اكتب أنا أو اضغط زر الانضمام — دخول الغرفة",
  "ابدأ — بدء اللعبة (قائد الغرفة فقط)",
- "تفاعل — تفاعل سريع على الرسالة",
+ "تفاعل ❤️ — ضع التفاعل الذي تختاره على رسالة ترد عليها (للمالك فقط)",
  "/join — الانضمام إلى الغرفة",
  "/leave — مغادرة الانتظار",
  "/startgame — تجهيز الخاص وبدء اللعبة",
@@ -42,6 +42,27 @@ async function announceResult(env,chatId) {
  const roles=data.players.map(p=>p.id+" — "+(ROLE_NAMES[p.role]??p.role)+(p.alive?" (باقٍ)":" (مقصى)"));
  await sendMessage(env,chatId,"🏁 انتهت الجولة. الفائز: "+(names[data.winner?.winner]??data.winner?.winner??"غير محدد")+"\nكشف الأدوار:\n"+roles.join("\n"));
 }
+const OWNER_REACTIONS=new Set(["❤️","🔥","😂","😍","👏","👍","🤝","⚡","🎉","😮","😢","🙏","💯","🥳","💔"]);
+async function handleOwnerReaction(message,env,emoji) {
+ const ownerId=String(env.OWNER_TELEGRAM_ID??"");
+ if(!ownerId || String(message.from.id)!==ownerId) {
+  await sendMessage(env,message.chat.id,"هذه الميزة متاحة لمالك البوت فقط.");
+  return;
+ }
+ if(!message.reply_to_message) {
+  await sendMessage(env,message.chat.id,"يجب أن ترد على الرسالة التي تريد التفاعل معها، ثم اكتب: تفاعل ❤️");
+  return;
+ }
+ if(!OWNER_REACTIONS.has(emoji)) {
+  await sendMessage(env,message.chat.id,"هذا التفاعل غير مدعوم. جرّب: ❤️ 🔥 😂 😍 👏 👍 🤝 ⚡ 🎉");
+  return;
+ }
+ try {
+  await telegramCall(env,"setMessageReaction",{chat_id:message.chat.id,message_id:message.reply_to_message.message_id,reaction:[{type:"emoji",emoji}],is_big:true});
+ } catch(error) {
+  await sendMessage(env,message.chat.id,"تعذر وضع التفاعل: "+(error?.message??"رفض Telegram الطلب. تأكد أن التفاعل مسموح في المجموعة."));
+ }
+}
 export async function routeUpdate(update,env) {
  const callback=update?.callback_query;
  if(callback?.message?.chat?.id && callback?.from?.id) {
@@ -63,14 +84,12 @@ export async function routeUpdate(update,env) {
   if(normalized==="ابدأ" || normalized.toLowerCase()==="ابدا") {
    return routeUpdate({message:{...message,text:"/startgame"}},env);
   }
-  if(normalized==="تفاعل") {
-   const reactions=["🔥","👍","❤️","👏","🤝","⚡"];
-   const emoji=reactions[Math.floor(Math.random()*reactions.length)];
-   await telegramCall(env,"setMessageReaction",{chat_id:message.chat.id,message_id:message.message_id,reaction:[{type:"emoji",emoji}],is_big:true});
-   return;
+  if(raw.startsWith("تفاعل ") || raw.startsWith("تفاعل\t")) {
+   return handleOwnerReaction(message,env,raw.slice(5).trim());
   }
   return;
  }
+
  const parts=raw.split(/\s+/);
  const command=parts[0].split("@")[0].toLowerCase();
  const arg=parts[1];
@@ -78,6 +97,7 @@ export async function routeUpdate(update,env) {
  const actor={id:String(message.from.id),name:[message.from.first_name,message.from.last_name].filter(Boolean).join(" ")||"لاعب"};
  const inPrivate=message.chat.type==="private";
  if(command==="/start"||command==="/rules") { await sendMessage(env,chatId,HELP); return; }
+ if(command==="/react") { return handleOwnerReaction(message,env,arg??""); }
  if(inPrivate) {
   if(command==="/myrole") {
    const roomId=parts[1];
