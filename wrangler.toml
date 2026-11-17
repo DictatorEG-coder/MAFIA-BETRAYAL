@@ -1,0 +1,21 @@
+name = "mafia-betrayal"
+main = "src/index.js"
+compatibility_date = "2026-11-17"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mafia-betrayal"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomCoordinator"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomCoordinator"]
