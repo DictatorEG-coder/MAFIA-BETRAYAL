@@ -46,3 +46,12 @@ test("room refuses a second game start",async()=>{
  const again=await call(room,"/start",{actorId:"1"});
  assert.equal(again.status,409);
 });
+
+test("only the room creator can prepare or start a game",async()=>{
+ const room=makeRoom();
+ for(let i=1;i<=5;i++) await call(room,"/join",{chatId:"-100",actor:{id:String(i),name:"P"+i}});
+ const preflight=await call(room,"/prepare",{actorId:"2"});
+ assert.equal(preflight.status,403);
+ const start=await call(room,"/start",{actorId:"2"});
+ assert.equal(start.status,403);
+});
