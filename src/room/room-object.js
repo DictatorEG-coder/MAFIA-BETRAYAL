@@ -33,6 +33,7 @@ export class RoomCoordinator {
       if (!chatId || !actor?.id) return Response.json({ error: "invalid_input" }, { status: 400 });
       const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };
       if (state.chatId !== String(chatId)) return Response.json({ error:"room_mismatch" }, { status:409 });
+      if (!state.creatorId) state.creatorId=String(actor.id);
       if (state.status !== "lobby") return Response.json({ error:"game_in_progress" }, { status:409 });
       if (this.env.DB) {
         const active = await this.env.DB.prepare("SELECT p.room_id FROM players p JOIN rooms r ON r.room_id=p.room_id WHERE p.telegram_id=? AND r.status='playing' LIMIT 1").bind(String(actor.id)).first();
