@@ -46,3 +46,45 @@ test("spy receives only whether the monitored target acted at night",()=>{
  const result=resolveNight(g);
  assert.deepEqual(result.monitoring,[{actorId:"s",targetId:"c",active:false}]);
 });
+
+test("mafia attack needs a strict majority of all living mafia members",()=>{
+ const g={phase:"night",stateVersion:0,actions:{},players:[
+  {id:"b",role:"boss",faction:"mafia",alive:true,health:100,armor:0},
+  {id:"k",role:"killer",faction:"mafia",alive:true,health:100,armor:0},
+  {id:"c",role:"citizen",faction:"city",alive:true,health:100,armor:0},
+  {id:"d",role:"doctor",faction:"city",alive:true,health:100,armor:0},
+  {id:"s",role:"survivor",faction:"independent",alive:true,health:100,armor:0}
+ ]};
+ submitNightAction(g,"b","attack","c");
+ const oneVote=resolveNight(g);
+ assert.deepEqual(oneVote.deaths,[]);
+ assert.equal(g.players.find(p=>p.id==="c").alive,true);
+});
+
+test("mafia attack succeeds when a strict majority agrees on one target",()=>{
+ const g={phase:"night",stateVersion:0,actions:{},players:[
+  {id:"b",role:"boss",faction:"mafia",alive:true,health:100,armor:0},
+  {id:"k",role:"killer",faction:"mafia",alive:true,health:100,armor:0},
+  {id:"c",role:"citizen",faction:"city",alive:true,health:100,armor:0},
+  {id:"d",role:"doctor",faction:"city",alive:true,health:100,armor:0},
+  {id:"s",role:"survivor",faction:"independent",alive:true,health:100,armor:0}
+ ]};
+ submitNightAction(g,"b","attack","c");
+ submitNightAction(g,"k","attack","c");
+ const result=resolveNight(g);
+ assert.deepEqual(result.deaths,["c"]);
+});
+
+test("split mafia votes do not produce a kill",()=>{
+ const g={phase:"night",stateVersion:0,actions:{},players:[
+  {id:"b",role:"boss",faction:"mafia",alive:true,health:100,armor:0},
+  {id:"k",role:"killer",faction:"mafia",alive:true,health:100,armor:0},
+  {id:"c",role:"citizen",faction:"city",alive:true,health:100,armor:0},
+  {id:"d",role:"doctor",faction:"city",alive:true,health:100,armor:0},
+  {id:"s",role:"survivor",faction:"independent",alive:true,health:100,armor:0}
+ ]};
+ submitNightAction(g,"b","attack","c");
+ submitNightAction(g,"k","attack","d");
+ const result=resolveNight(g);
+ assert.deepEqual(result.deaths,[]);
+});
