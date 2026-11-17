@@ -2,6 +2,7 @@ import { createGame } from "../game/engine.js";
 import { resolveNight, submitNightAction } from "../game/night.js";
 import { nominate, selectDefendant } from "../game/day.js";
 import { castVote, finishVoting } from "../game/engine.js";
+import { sendMessage } from "../telegram/api.js";
 
 export class RoomCoordinator {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
