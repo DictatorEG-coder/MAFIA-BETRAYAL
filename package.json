@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/game/engine.js && node --check src/room/room-object.js"
+    "check": "node --check src/index.js && node --check src/telegram/webhook.js && node --check src/telegram/router.js && node --check src/room/room-object.js && node --check src/game/engine.js && node --check src/game/night.js && node --check src/game/day.js"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
