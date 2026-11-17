@@ -13,7 +13,7 @@ const HELP = [
  "/myrole رقم_المجموعة — استرجاع دورك في الخاص",
  "/status — حالة الغرفة",
  "/newgame — فتح جولة جديدة بعد انتهاء السابقة (قائد الغرفة فقط)",
- "الأفعال السرية في الخاص: /attack رقم_المجموعة رقم_اللاعب، /protect، /investigate، /spy، /nominate، /vote",
+ "الأفعال السرية في الخاص: /attack رقم_المجموعة رقم_اللاعب، /protect، /investigate، /spy، /avenge، /nominate، /vote",
  "أوامر قائد الغرفة: /resolve، /defendant، /openvote، /finishvote",
  "/rules — عرض هذه القائمة"
 ].join("\n");
@@ -21,7 +21,7 @@ const HELP = [
 const ROLE_NAMES={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
 const ROLE_OBJECTIVES={
  detective:"افحص لاعبًا ليلًا لتعرف إن كان من المافيا.",doctor:"احمِ لاعبًا كل ليلة من هجوم المافيا.",guard:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
- avenger:"دورك الدفاع عن المدينة؛ قدرتك الخاصة لم تُفعّل بعد.",citizen:"راقب النقاش وصوّت بحذر لإقصاء التهديدات.",
+ avenger:"إذا أُقصيت، اختر لاعبًا واحدًا للانتقام منه مرة واحدة عبر /avenge رقم_المجموعة رقم_اللاعب.",citizen:"راقب النقاش وصوّت بحذر لإقصاء التهديدات.",
  boss:"نسّق هجوم المافيا ليلًا وابقَ متخفيًا.",killer:"شارك المافيا في اختيار هدف الهجوم الليلي.",
  survivor:"هدفك البقاء حيًا حتى نهاية الجولة الرابعة.",spy:"راقب لاعبًا ليلًا لتعرف هل قام بفعل أم بقي ساكنًا، دون كشف دوره.",gambler:"أنت مستقل؛ مهمتك السرية لم تُفعّل بعد."
 };
@@ -107,7 +107,7 @@ export async function routeUpdate(update,env) {
    const allies=data.allies?.length?"\nحلفاؤك: "+data.allies.join("، "):"";
    await sendMessage(env,chatId,"🎭 دورك: "+(ROLE_NAMES[data.role]??data.role)+"\nمهمتك: "+(ROLE_OBJECTIVES[data.role]??"ابقَ على قيد الحياة.")+allies); return;
   }
-  const privateActions={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote"};
+  const privateActions={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote","/avenge":"avenge"};
   if(privateActions[command]) {
    const roomId=parts[1]; const slot=Number(parts[2]);
    if(!roomId || !/^-?[0-9]+$/.test(roomId) || !Number.isInteger(slot) || slot<1 || slot>10) {
@@ -115,10 +115,16 @@ export async function routeUpdate(update,env) {
    }
    const players=await roster(env,roomId); const target=players.find(p=>p.slot===slot&&p.alive);
    if(!target) { await sendMessage(env,chatId,"اللاعب غير موجود أو أُقصي، أو أن رقم المجموعة غير صحيح."); return; }
-   const path=command==="/nominate"?"/nominate":command==="/vote"?"/vote":"/night/action";
-   const body=command==="/nominate"||command==="/vote"?{actorId:actor.id,targetId:target.id}:{actorId:actor.id,action:privateActions[command],targetId:target.id};
+   const path=command==="/nominate"?"/nominate":command==="/vote"?"/vote":command==="/avenge"?"/avenge":"/night/action";
+   const body=command==="/nominate"||command==="/vote"||command==="/avenge"?{actorId:actor.id,targetId:target.id}:{actorId:actor.id,action:privateActions[command],targetId:target.id};
    const response=await roomCall(env,roomId,path,body); const data=await response.json();
-   await sendMessage(env,chatId,response.ok?"تم تسجيل اختيارك سرًا.":"لم يُقبل اختيارك: "+(data.error??"خطأ")); return;
+   if(response.ok && command==="/avenge") {
+    const targetName=target.name??"اللاعب";
+    await sendMessage(env,roomId,"سقط "+targetName+" في حادثة غامضة.");
+    await sendMessage(env,chatId,"تم تنفيذ انتقامك. لقد أُقصي الهدف.");
+    if(data.phase==="ended") await announceResult(env,roomId);
+   } else await sendMessage(env,chatId,response.ok?"تم تسجيل اختيارك سرًا.":"لم يُقبل اختيارك: "+(data.error??"خطأ"));
+   return;
   }
   await sendMessage(env,chatId,"أوامر اللعبة السرية تُرسل هنا في الخاص. استخدم الصيغة: /attack رقم_المجموعة رقم_اللاعب. أرسل /rules لعرض بقية الأوامر."); return;
  }
