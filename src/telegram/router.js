@@ -51,6 +51,14 @@ export async function routeUpdate(update,env) {
  const inPrivate=message.chat.type==="private";
  if(command==="/start"||command==="/rules") { await sendMessage(env,chatId,HELP); return; }
  if(inPrivate) {
+  if(command==="/myrole") {
+   const roomId=parts[1];
+   if(!roomId || !/^-?[0-9]+$/.test(roomId)) { await sendMessage(env,chatId,"الصيغة: /myrole رقم_المجموعة"); return; }
+   const response=await roomCall(env,roomId,"/myrole",{actorId:actor.id}); const data=await response.json();
+   if(!response.ok) { await sendMessage(env,chatId,"تعذر استرجاع دورك: "+(data.error??"خطأ")); return; }
+   const allies=data.allies?.length?"\nحلفاؤك: "+data.allies.join("، "):"";
+   await sendMessage(env,chatId,"🎭 دورك: "+(ROLE_NAMES[data.role]??data.role)+"\nمهمتك: "+(ROLE_OBJECTIVES[data.role]??"ابقَ على قيد الحياة.")+allies); return;
+  }
   const privateActions={"/attack":"attack","/protect":"protect","/investigate":"investigate","/nominate":"nominate","/vote":"vote"};
   if(privateActions[command]) {
    const roomId=parts[1]; const slot=Number(parts[2]);
@@ -96,11 +104,14 @@ export async function routeUpdate(update,env) {
   const response=await roomCall(env,chatId,"/start",{actorId:actor.id}); const data=await response.json();
   if(!response.ok) { await sendMessage(env,chatId,"تعذر بدء اللعبة: "+(data.error??"خطأ")); return; }
   const mafia=data.players.filter(p=>["boss","killer","spy"].includes(p.role));
+  const deliveryFailures=[];
   for(const p of data.players) {
    const allies=["boss","killer","spy"].includes(p.role)?"\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
-   await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\\nدورك: "+ROLE_NAMES[p.role]+"\\nمهمتك: "+ROLE_OBJECTIVES[p.role]+allies+"\\nالأفعال السرية تُرسل هنا في الخاص. رقم المجموعة: "+chatId+"\\nمثال: /attack "+chatId+" 2\\nلا تكشف دورك لأي لاعب.");
+   try {
+    await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\\nدورك: "+ROLE_NAMES[p.role]+"\\nمهمتك: "+ROLE_OBJECTIVES[p.role]+allies+"\\nالأفعال السرية تُرسل هنا في الخاص. رقم المجموعة: "+chatId+"\\nاسترجاع الدور: /myrole "+chatId+"\\nمثال: /attack "+chatId+" 2\\nلا تكشف دورك لأي لاعب.");
+   } catch { deliveryFailures.push(p.name); }
   }
-  await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. استخدم /players لمعرفة أرقام اللاعبين."); return;
+  await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. استخدم /players لمعرفة أرقام اللاعبين."+(deliveryFailures.length?"\\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، ")+" — يمكن لكل لاعب استرجاع دوره في الخاص عبر /myrole "+chatId:"")); return;
  }
  const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/nominate":"nominate","/vote":"vote"};
  if(actionCommands[command]) {
