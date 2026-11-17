@@ -1,108 +1,128 @@
 import { sendMessage } from "./api.js";
 
 const HELP = [
-  "🕯️ MAFIA: BETRAYAL — مدينة الغُراب",
-  "/mafia — إنشاء غرفة",
-  "/join — الانضمام إلى الغرفة",
-  "/leave — مغادرة الانتظار",
-  "/startgame — بدء اللعبة (5 إلى 10 لاعبين)",
-  "/status — حالة الغرفة",
-  "/rules — القواعد المختصرة"
+ "🕯️ MAFIA: BETRAYAL — مدينة الغُراب",
+ "/mafia — إنشاء غرفة، ومنشئها يصبح قائدها",
+ "/join — الانضمام إلى الغرفة",
+ "/leave — مغادرة الانتظار",
+ "/startgame — تجهيز الخاص وبدء اللعبة",
+ "/players — عرض اللاعبين وأرقامهم",
+ "/status — حالة الغرفة",
+ "أوامر اللعب: /attack رقم، /protect رقم، /investigate رقم، /nominate رقم، /vote رقم",
+ "أوامر قائد الغرفة: /resolve، /defendant، /openvote، /finishvote",
+ "/rules — عرض هذه القائمة"
 ].join("\n");
 
-const ROLE_NAMES = {
-  detective:"المحقق", doctor:"الطبيب", guard:"الحارس", avenger:"المنتقم", citizen:"المواطن",
-  boss:"زعيم المافيا", killer:"القاتل", spy:"الجاسوس", survivor:"الناجي", gambler:"المقامر"
+const ROLE_NAMES={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+const ROLE_OBJECTIVES={
+ detective:"افحص لاعبًا ليلًا لتعرف إن كان من المافيا.",doctor:"احمِ لاعبًا كل ليلة من هجوم المافيا.",guard:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
+ avenger:"دورك الدفاع عن المدينة؛ قدرتك الخاصة لم تُفعّل بعد.",citizen:"راقب النقاش وصوّت بحذر لإقصاء التهديدات.",
+ boss:"نسّق هجوم المافيا ليلًا وابقَ متخفيًا.",killer:"شارك المافيا في اختيار هدف الهجوم الليلي.",
+ spy:"أنت من المافيا؛ قدرة التخريب لم تُفعّل بعد.",survivor:"هدفك البقاء حيًا حتى نهاية الجولة الرابعة.",gambler:"أنت مستقل؛ مهمتك السرية لم تُفعّل بعد."
 };
-const ROLE_OBJECTIVES = {
-  detective:"افحص لاعبًا ليلًا لتعرف إن كان من المافيا.",
-  doctor:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
-  guard:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
-  avenger:"دورك الدفاع عن المدينة؛ ستُضاف قدرتك الخاصة في مرحلة التوازن التالية.",
-  citizen:"راقب النقاش وصوّت بحذر لإقصاء التهديدات.",
-  boss:"نسّق هجوم المافيا ليلًا وابقَ متخفيًا.",
-  killer:"شارك المافيا في اختيار هدف الهجوم الليلي.",
-  spy:"أنت من المافيا؛ قدرة التخريب لم تُفعّل بعد.",
-  survivor:"هدفك البقاء حيًا حتى نهاية الجولة الرابعة.",
-  gambler:"أنت مستقل؛ مهمتك السرية لم تُفعّل بعد."
-};
-
-async function roomCall(env, chatId, path, body) {
-  const stub=env.ROOMS.get(env.ROOMS.idFromName(String(chatId)));
-  return stub.fetch("https://room"+path,{method:body?"POST":"GET",headers:body?{"content-type":"application/json"}:{},body:body?JSON.stringify(body):undefined});
+async function roomCall(env,chatId,path,body) {
+ const stub=env.ROOMS.get(env.ROOMS.idFromName(String(chatId)));
+ return stub.fetch("https://room"+path,{method:body?"POST":"GET",headers:body?{"content-type":"application/json"}:{},body:body?JSON.stringify(body):undefined});
 }
+async function roster(env,chatId) {
+ const response=await roomCall(env,chatId,"/players");
+ const data=await response.json();
+ return data.players??[];
+}
+async function announceResult(env,chatId) {
+ const response=await roomCall(env,chatId,"/result");
+ if(!response.ok) return;
+ const data=await response.json();
+ const names={city:"المدينة",mafia:"المافيا",survivor:"الناجي"};
+ const roles=data.players.map(p=>p.id+" — "+(ROLE_NAMES[p.role]??p.role)+(p.alive?" (باقٍ)":" (مقصى)"));
+ await sendMessage(env,chatId,"🏁 انتهت الجولة. الفائز: "+(names[data.winner?.winner]??data.winner?.winner??"غير محدد")+"\nكشف الأدوار:\n"+roles.join("\n"));
+}
+export async function routeUpdate(update,env) {
+ const message=update?.message;
+ if(!message?.chat?.id||!message?.from?.id) return;
+ const raw=String(message.text??"").trim();
+ if(!raw.startsWith("/")) return;
+ const parts=raw.split(/\s+/);
+ const command=parts[0].split("@")[0].toLowerCase();
+ const arg=parts[1];
+ const chatId=String(message.chat.id);
+ const actor={id:String(message.from.id),name:[message.from.first_name,message.from.last_name].filter(Boolean).join(" ")||"لاعب"};
+ const inPrivate=message.chat.type==="private";
+ if(command==="/start"||command==="/rules") { await sendMessage(env,chatId,HELP); return; }
+ if(inPrivate) { await sendMessage(env,chatId,"افتح البوت أولًا، ثم انضم إلى غرفة اللعبة من المجموعة باستخدام /join."); return; }
 
-export async function routeUpdate(update, env) {
-  const message=update?.message;
-  if(!message?.chat?.id||!message?.from?.id) return;
-  const raw=String(message.text??"").trim();
-  if(!raw.startsWith("/")) return;
-  const command=raw.split(/\s+/,1)[0].split("@")[0].toLowerCase();
-  const chatId=String(message.chat.id);
-  const actor={id:String(message.from.id),name:[message.from.first_name,message.from.last_name].filter(Boolean).join(" ")||"لاعب"};
-  const inPrivate=message.chat.type==="private";
-
-  if(command==="/start"||command==="/rules") {
-    await sendMessage(env,chatId,HELP);
-    return;
+ if(command==="/mafia"||command==="/join") {
+  const response=await roomCall(env,chatId,"/join",{chatId,actor}); const data=await response.json();
+  await sendMessage(env,chatId,response.ok?(command==="/mafia"?"🕯️ فُتحت غرفة الغُراب. ":"")+"انضممت إلى الغرفة. عدد اللاعبين: "+data.players+"/10":"تعذر الانضمام: "+(data.error??"خطأ")); return;
+ }
+ if(command==="/leave") {
+  const response=await roomCall(env,chatId,"/leave",{actorId:actor.id}); const data=await response.json();
+  await sendMessage(env,chatId,response.ok?"غادرت غرفة الانتظار.":"تعذر المغادرة: "+(data.error??"خطأ")); return;
+ }
+ if(command==="/status") {
+  const data=await (await roomCall(env,chatId,"/status")).json();
+  await sendMessage(env,chatId,"الحالة: "+data.status+"\nاللاعبون: "+data.players+"/10"+(data.phase?"\nالمرحلة: "+data.phase:"")+(data.round?"\nالجولة: "+data.round:"")); return;
+ }
+ if(command==="/players") {
+  const players=await roster(env,chatId);
+  await sendMessage(env,chatId,players.length?players.map(p=>p.slot+". "+p.name+(p.alive?"":" — مقصى")).join("\n"):"لا توجد غرفة بعد."); return;
+ }
+ if(command==="/startgame") {
+  const preflight=await roomCall(env,chatId,"/prepare",{actorId:actor.id}); const ready=await preflight.json();
+  if(!preflight.ok) { await sendMessage(env,chatId,ready.error==="player_count"?"العدد الحالي "+ready.count+"؛ نحتاج من 5 إلى 10 لاعبين.":"تعذر تجهيز اللعبة: "+(ready.error??"خطأ")); return; }
+  const failures=[];
+  for(const p of ready.players) { try { await sendMessage(env,p.id,"تم تجهيز غرفة MAFIA: BETRAYAL. ستصلك رسالتك السرية عند بدء الجولة."); } catch { failures.push(p.name); } }
+  if(failures.length) { await sendMessage(env,chatId,"لم تبدأ الجولة. يجب على هؤلاء فتح البوت والضغط على Start: "+failures.join("، ")); return; }
+  const response=await roomCall(env,chatId,"/start",{actorId:actor.id}); const data=await response.json();
+  if(!response.ok) { await sendMessage(env,chatId,"تعذر بدء اللعبة: "+(data.error??"خطأ")); return; }
+  const mafia=data.players.filter(p=>["boss","killer","spy"].includes(p.role));
+  for(const p of data.players) {
+   const allies=["boss","killer","spy"].includes(p.role)?"\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
+   await sendMessage(env,p.id,"🎭 MAFIA: BETRAYAL\nدورك: "+ROLE_NAMES[p.role]+"\nمهمتك: "+ROLE_OBJECTIVES[p.role]+allies+"\nلا تكشف دورك لأي لاعب.");
   }
-  if(inPrivate) {
-    await sendMessage(env,chatId,"افتح البوت أولًا، ثم انضم إلى غرفة اللعبة من المجموعة باستخدام /join.");
-    return;
+  await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. استخدم /players لمعرفة أرقام اللاعبين."); return;
+ }
+ const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/nominate":"nominate","/vote":"vote"};
+ if(actionCommands[command]) {
+  const slot=Number(arg);
+  if(!Number.isInteger(slot)||slot<1||slot>10) { await sendMessage(env,chatId,"اكتب رقم لاعب صحيحًا، مثل: "+command+" 2"); return; }
+  const players=await roster(env,chatId); const target=players.find(p=>p.slot===slot&&p.alive);
+  if(!target) { await sendMessage(env,chatId,"رقم اللاعب غير موجود أو أنه أُقصي."); return; }
+  const path=command==="/nominate"?"/nominate":command==="/vote"?"/vote":"/night/action";
+  const body=command==="/nominate"||command==="/vote"?{actorId:actor.id,targetId:target.id}:{actorId:actor.id,action:actionCommands[command],targetId:target.id};
+  const response=await roomCall(env,chatId,path,body); const data=await response.json();
+  await sendMessage(env,chatId,response.ok?"تم تسجيل اختيارك.":"لم يُقبل اختيارك: "+(data.error??"خطأ")); return;
+ }
+ if(command==="/resolve") {
+  const response=await roomCall(env,chatId,"/night/resolve",{actorId:actor.id}); const data=await response.json();
+  if(!response.ok) { await sendMessage(env,chatId,"تعذر حسم الليل: "+(data.error??"خطأ")); return; }
+  const players=await roster(env,chatId);
+  for(const item of data.investigations??[]) {
+   const target=players.find(p=>p.id===item.targetId);
+   await sendMessage(env,item.actorId,"نتيجة التحقيق في "+(target?.name??"اللاعب") +": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه"));
   }
-  if(command==="/mafia") {
-    const response=await roomCall(env,chatId,"/join",{chatId,actor});
-    const data=await response.json();
-    await sendMessage(env,chatId,response.ok?"🕯️ فُتحت غرفة الغُراب وأُضيفت إليها. أرسل /join لبقية اللاعبين. نحتاج من 5 إلى 10 لاعبين.":"تعذر إنشاء الغرفة: "+(data.error??"خطأ"));
-    return;
-  }
-  if(command==="/join") {
-    const response=await roomCall(env,chatId,"/join",{chatId,actor});
-    const data=await response.json();
-    await sendMessage(env,chatId,response.ok?"انضممت إلى الغرفة. عدد اللاعبين: "+data.players+"/10":"تعذر الانضمام: "+(data.error??"خطأ"));
-    return;
-  }
-  if(command==="/leave") {
-    const response=await roomCall(env,chatId,"/leave",{actorId:actor.id});
-    const data=await response.json();
-    await sendMessage(env,chatId,response.ok?"غادرت غرفة الانتظار.":"لا يمكنك المغادرة الآن: "+(data.error??"خطأ"));
-    return;
-  }
-  if(command==="/status") {
-    const response=await roomCall(env,chatId,"/status");
-    const data=await response.json();
-    await sendMessage(env,chatId,"الحالة: "+data.status+"\nاللاعبون: "+data.players+"/10"+(data.phase?"\nالمرحلة: "+data.phase:"")+(data.round?"\nالجولة: "+data.round:""));
-    return;
-  }
-  if(command==="/startgame") {
-    const preflight=await roomCall(env,chatId,"/prepare",{actorId:actor.id});
-    const ready=await preflight.json();
-    if(!preflight.ok) {
-      await sendMessage(env,chatId,ready.error==="player_count"?"لا يمكن البدء. العدد الحالي "+ready.count+"؛ نحتاج من 5 إلى 10 لاعبين.":"تعذر تجهيز اللعبة: "+(ready.error??"خطأ"));
-      return;
-    }
-    const failures=[];
-    for(const player of ready.players) {
-      try { await sendMessage(env,player.id,"تم تجهيز غرفة MAFIA: BETRAYAL. ستصلك رسالتك السرية عند بدء الجولة."); }
-      catch { failures.push(player.name); }
-    }
-    if(failures.length) {
-      await sendMessage(env,chatId,"لم تبدأ الجولة. يجب على اللاعبين التاليين فتح البوت والضغط على Start ثم إعادة المحاولة: "+failures.join("، "));
-      return;
-    }
-    const response=await roomCall(env,chatId,"/start",{actorId:actor.id});
-    const data=await response.json();
-    if(!response.ok) {
-      await sendMessage(env,chatId,"تعذر بدء اللعبة: "+(data.error??"خطأ"));
-      return;
-    }
-    const mafiaPlayers=data.players.filter(p=>["boss","killer","spy"].includes(p.role));
-    for(const player of data.players) {
-      const allies=["boss","killer","spy"].includes(player.role) ? "\\nحلفاؤك: "+mafiaPlayers.filter(p=>p.id!==player.id).map(p=>p.name).join("، ") : "";
-      await sendMessage(env,player.id,"🎭 MAFIA: BETRAYAL\\nدورك: "+(ROLE_NAMES[player.role]??player.role)+"\\nمهمتك: "+(ROLE_OBJECTIVES[player.role]??"ابقَ على قيد الحياة.")+allies+"\\nلا تكشف دورك لأي لاعب.");
-    }
-    await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص.");
-    return;
-  }
-  await sendMessage(env,chatId,"أمر غير معروف. أرسل /rules لعرض الأوامر.");
+  const dead=(data.deaths??[]).map(id=>players.find(p=>p.id===id)?.name??"لاعب");
+  await sendMessage(env,chatId,(dead.length?"انتهى الليل. المقصى: "+dead.join("، "):"انتهى الليل دون إقصاء.")+"\nالمرحلة التالية: "+data.phase);
+  if(data.phase==="ended") await announceResult(env,chatId); return;
+ }
+ if(command==="/defendant") {
+  const response=await roomCall(env,chatId,"/defendant",{actorId:actor.id}); const data=await response.json();
+  if(!response.ok) { await sendMessage(env,chatId,"تعذر تحديد المتهم: "+(data.error??"خطأ")); return; }
+  const players=await roster(env,chatId); const defendant=players.find(p=>p.id===data.defendant);
+  await sendMessage(env,chatId,defendant?"المتهم المختار: "+defendant.name+"\nمرحلة الدفاع. بعد انتهائها استخدم /openvote.":"لا يوجد مرشح."); return;
+ }
+ if(command==="/openvote") {
+  const response=await roomCall(env,chatId,"/open-voting",{actorId:actor.id}); const data=await response.json();
+  await sendMessage(env,chatId,response.ok?"بدأ التصويت السري. استخدم /vote رقم.":"تعذر فتح التصويت: "+(data.error??"خطأ")); return;
+ }
+ if(command==="/finishvote") {
+  const response=await roomCall(env,chatId,"/vote/finish",{actorId:actor.id}); const data=await response.json();
+  if(!response.ok) { await sendMessage(env,chatId,"تعذر إنهاء التصويت: "+(data.error??"خطأ")); return; }
+  const players=await roster(env,chatId); const target=players.find(p=>p.id===data.eliminated);
+  await sendMessage(env,chatId,data.eliminated?"تم إقصاء "+(target?.name??"لاعب")+". لن يُكشف دوره حتى نهاية الجولة.":"لم يُقصَ أحد ("+data.reason+").");
+  if(data.phase==="ended") await announceResult(env,chatId);
+  else await sendMessage(env,chatId,"تبدأ المرحلة الليلية التالية. أرسلوا أفعالكم السرية ثم استخدم قائد الغرفة /resolve.");
+  return;
+ }
+ await sendMessage(env,chatId,"أمر غير معروف. أرسل /rules لعرض الأوامر.");
 }
