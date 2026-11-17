@@ -144,7 +144,7 @@ export class RoomCoordinator {
       if (!state?.game || state.status !== "playing") return Response.json({error:"no_active_game"},{status:409});
       const result = resolveNight(state.game);
       state.stateVersion++;
-      if(state.game.phase!=="ended") state.deadline=Date.now()+90_000;
+      if(state.game.phase!=="ended") state.deadline=Date.now()+120_000;
       if(state.game.phase==="ended") {
         state.status="ended";
         if(this.env.DB) {
@@ -155,7 +155,7 @@ export class RoomCoordinator {
       await this.ctx.storage.put("room",state);
       if(state.game.phase!=="ended") await this.ctx.storage.setAlarm(state.deadline);
       else await this.ctx.storage.deleteAlarm?.();
-      return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
+      return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,monitoring:result.monitoring,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
     }
     if (url.pathname === "/nominate" && request.method === "POST") {
       const {actorId,targetId}=await request.json();
@@ -171,7 +171,7 @@ export class RoomCoordinator {
       if(!state?.game) return Response.json({error:"no_active_game"},{status:409});
       try {
         const result=selectDefendant(state.game);
-        if(result.defendant) state.deadline=Date.now()+30_000;
+        if(result.defendant) state.deadline=Date.now()+45_000;
         else state.deadline=Date.now()+90_000;
         await this.ctx.storage.put("room",state);
         await this.ctx.storage.setAlarm(state.deadline);
@@ -252,18 +252,18 @@ export class RoomCoordinator {
         announcement+="\\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
       } else {
         game.phase="day";
-        state.deadline=Date.now()+90_000;
-        announcement+="\\nبدأ النهار. أمامكم 90 ثانية للنقاش.";
+        state.deadline=Date.now()+120_000;
+        announcement+="\\nبدأ النهار. أمامكم 120 ثانية للنقاش.";
       }
     } else if(game.phase==="day") {
       game.phase="nomination";
-      state.deadline=Date.now()+60_000;
-      announcement="انتهى النقاش. أمامكم 60 ثانية للترشيح السري: /nominate رقم_المجموعة رقم_اللاعب";
+      state.deadline=Date.now()+30_000;
+      announcement="انتهى النقاش. أمامكم 30 ثانية للترشيح السري: /nominate رقم_المجموعة رقم_اللاعب";
     } else if(game.phase==="nomination") {
       const selected=selectDefendant(game);
       if(selected.defendant) {
-        state.deadline=Date.now()+30_000;
-        announcement="انتهى الترشيح. بدأت مهلة الدفاع، 30 ثانية.";
+        state.deadline=Date.now()+45_000;
+        announcement="انتهى الترشيح. بدأت مهلة الدفاع، 45 ثانية.";
       } else {
         game.phase="night";
         game.round++;
