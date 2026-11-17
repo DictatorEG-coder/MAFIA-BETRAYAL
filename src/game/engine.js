@@ -18,6 +18,7 @@ export function castVote(game, voterId, targetId) {
   const voter = game.players.find(p => p.id === String(voterId) && p.alive);
   const target = game.players.find(p => p.id === String(targetId) && p.alive);
   if (!voter || !target || voter.id === target.id) throw new Error("Invalid vote");
+  if (!game.defendant || target.id !== game.defendant) throw new Error("Votes must target the accused player");
   if (game.votes[voter.id]) throw new Error("Vote already submitted");
   game.votes[voter.id] = target.id;
   game.stateVersion++;
@@ -36,6 +37,8 @@ export function finishVoting(game) {
   game.phase = "night";
   game.round++;
   game.votes = {};
+  game.nominations = {};
+  game.defendant = null;
   game.winner = getWinner(game.players, game.round - 1);
   if (game.winner) {
     game.phase = "ended";
