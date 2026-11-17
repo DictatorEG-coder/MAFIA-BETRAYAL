@@ -78,7 +78,7 @@ export async function routeUpdate(update, env) {
       await sendMessage(env,chatId,"لم تبدأ الجولة. يجب على اللاعبين التاليين فتح البوت والضغط على Start ثم إعادة المحاولة: "+failures.join("، "));
       return;
     }
-    const response=await roomCall(env,chatId,"/start",{});
+    const response=await roomCall(env,chatId,"/start",{actorId:actor.id});
     const data=await response.json();
     if(!response.ok) {
       await sendMessage(env,chatId,"تعذر بدء اللعبة: "+(data.error??"خطأ"));
