@@ -31,8 +31,10 @@ export class RoomCoordinator {
       return Response.json({ ok:true, players:Object.keys(state.players).length });
     }
     if (url.pathname === "/prepare" && request.method === "POST") {
+      const { actorId } = await request.json();
       const state = await this.ctx.storage.get("room");
       if (!state || state.status !== "lobby") return Response.json({error:"not_in_lobby"},{status:409});
+      if (!state.creatorId || state.creatorId !== String(actorId)) return Response.json({error:"creator_only"},{status:403});
       const ids = Object.keys(state.players);
       if (ids.length < 5 || ids.length > 10) return Response.json({error:"player_count",count:ids.length},{status:400});
       return Response.json({ok:true,players:ids.map(id=>({id,name:state.players[id].name}))});
