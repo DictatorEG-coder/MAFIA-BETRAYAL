@@ -58,6 +58,25 @@ async function handleMembershipUpdate(update,env) {
  await trackGroup(env,event.chat,active?"active":"left");
  return true;
 }
+async function sendOwnerList(env,chatId,kind,page=1) {
+ if(!env.DB) { await sendMessage(env,chatId,"قاعدة البيانات غير متاحة حاليًا."); return; }
+ const limit=15, offset=(page-1)*limit;
+ if(kind==="users") {
+  const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM bot_users").first();
+  const rows=await env.DB.prepare("SELECT user_id,display_name,username,last_seen_at FROM bot_users ORDER BY last_seen_at DESC LIMIT ? OFFSET ?").bind(limit,offset).all();
+  const total=count?.total??0, pages=Math.max(1,Math.ceil(total/limit));
+  if(page>pages) { await sendMessage(env,chatId,"لا توجد صفحة بهذا الرقم. إجمالي الصفحات: "+pages); return; }
+  const lines=(rows.results??[]).map((u,i)=>(offset+i+1)+". "+u.display_name+" — "+u.user_id+(u.username?" (@"+u.username+")":""));
+  await sendMessage(env,chatId,"👥 المستخدمون الذين تفاعلوا مع البوت\nالصفحة "+page+"/"+pages+" — الإجمالي: "+total+"\n\n"+(lines.join("\n")||"لا يوجد مستخدمون."));
+  return;
+ }
+ const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM bot_groups").first();
+ const rows=await env.DB.prepare("SELECT chat_id,title,chat_type,status,added_at,last_seen_at FROM bot_groups ORDER BY last_seen_at DESC LIMIT ? OFFSET ?").bind(limit,offset).all();
+ const total=count?.total??0, pages=Math.max(1,Math.ceil(total/limit));
+ if(page>pages) { await sendMessage(env,chatId,"لا توجد صفحة بهذا الرقم. إجمالي الصفحات: "+pages); return; }
+ const lines=(rows.results??[]).map((g,i)=>(offset+i+1)+". "+g.title+" — "+g.chat_id+" ["+(g.status==="active"?"البوت موجود":"البوت غادر")+"]");
+ await sendMessage(env,chatId,"🏘️ المجموعات المسجلة\nالصفحة "+page+"/"+pages+" — الإجمالي: "+total+"\n\n"+(lines.join("\n")||"لا توجد مجموعات مسجلة."));
+}
 async function sendOwnerPanel(env,chatId) {
  if(!env.DB) { await sendMessage(env,chatId,"لوحة المالك غير متاحة: قاعدة البيانات غير متصلة."); return; }
  const [userCount,groupCount,users,groups]=await Promise.all([
@@ -68,7 +87,7 @@ async function sendOwnerPanel(env,chatId) {
  ]);
  const userLines=(users.results??[]).map((u,i)=>(i+1)+". "+u.display_name+" — "+u.user_id+(u.username?" (@"+u.username+")":""));
  const groupLines=(groups.results??[]).map((g,i)=>(i+1)+". "+g.title+" — "+g.chat_id+" ["+(g.status==="active"?"نشطة":"غادرها البوت")+"]");
- const message="🛡️ لوحة مالك MAFIA: BETRAYAL\n\n👥 المستخدمون المسجلون: "+(userCount?.total??0)+"\n🏘️ المجموعات النشطة: "+(groupCount?.total??0)+"\n\n👤 آخر 10 مستخدمين تفاعلوا مع البوت:\n"+(userLines.join("\n")||"لا يوجد مستخدمون مسجلون.")+"\n\n🏘️ آخر 10 مجموعات أُضيف إليها البوت أو تفاعل معها:\n"+(groupLines.join("\n")||"لا توجد مجموعات مسجلة.")+"\n\nملاحظة: التسجيل يبدأ من تفعيل هذا التحديث؛ المجموعات القديمة تُسجّل عند أول تفاعل جديد.";
+ const message="🛡️ لوحة مالك MAFIA: BETRAYAL\n\n👥 المستخدمون المسجلون: "+(userCount?.total??0)+"\n🏘️ المجموعات النشطة: "+(groupCount?.total??0)+"\n\n👤 آخر 10 مستخدمين تفاعلوا مع البوت:\n"+(userLines.join("\n")||"لا يوجد مستخدمون مسجلون.")+"\n\n🏘️ آخر 10 مجموعات أُضيف إليها البوت أو تفاعل معها:\n"+(groupLines.join("\n")||"لا توجد مجموعات مسجلة.")+"\n\n\nالقوائم الكاملة: /users و /groups، ويمكن إضافة رقم الصفحة مثل /users 2.";
  await sendMessage(env,chatId,message);
 }
 const OWNER_REACTIONS=new Set(["❤️","🔥","😂","😍","👏","👍","🤝","⚡","🎉","😮","😢","🙏","💯","🥳","💔"]);
@@ -167,6 +186,11 @@ export async function routeUpdate(update,env) {
  const chatId=String(message.chat.id);
  const actor={id:String(message.from.id),name:[message.from.first_name,message.from.last_name].filter(Boolean).join(" ")||"لاعب"};
  const inPrivate=message.chat.type==="private";
+ if((command==="/users"||command==="/groups") && inPrivate) {
+  if(String(env.OWNER_TELEGRAM_ID??"")!==actor.id) { await sendMessage(env,chatId,"هذه القوائم متاحة لمالك البوت فقط."); return; }
+  const page=Math.max(1,Math.min(1000,Number(parts[1])||1));
+  await sendOwnerList(env,chatId,command==="/users"?"users":"groups",page); return;
+ }
  if(command==="/panel" && inPrivate) {
   if(String(env.OWNER_TELEGRAM_ID??"")!==actor.id) { await sendMessage(env,chatId,"هذه اللوحة متاحة لمالك البوت فقط."); return; }
   await sendOwnerPanel(env,chatId); return;
