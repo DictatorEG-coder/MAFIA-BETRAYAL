@@ -81,3 +81,30 @@ test("reaction command requires replying to a target message",async()=>{
   assert.match(sent[0].text,/ترد على الرسالة/);
  } finally {globalThis.fetch=previous;}
 });
+
+test("private start shows onboarding and add-to-group button instead of numeric commands",async()=>{
+ const previous=globalThis.fetch; let payload;
+ globalThis.fetch=async(url,options)=>{payload=JSON.parse(options.body);return Response.json({ok:true,result:{message_id:1}});};
+ try {
+  const env={TELEGRAM_BOT_TOKEN:"test"};
+  await routeUpdate({message:{chat:{id:111,type:"private"},from:{id:111,first_name:"A"},text:"/start"}},env);
+  assert.match(payload.text,/MAFIA: BETRAYAL/);
+  assert.equal(payload.reply_markup.inline_keyboard[0][0].text,"➕ إضافة إلى المجموعة");
+  assert.equal(payload.reply_markup.inline_keyboard[0][0].url,"https://t.me/Dictator_mafia_bot?startgroup=play");
+  assert.doesNotMatch(payload.text,/رقم_المجموعة/);
+ });
+});
+
+test("private abstention button is routed to the correct room",async()=>{
+ const previous=globalThis.fetch; const calls=[];
+ const stub={async fetch(url,options){
+  calls.push({path:new URL(url).pathname,body:JSON.parse(options.body)});
+  return Response.json({ok:true});
+ }};
+ globalThis.fetch=async()=>Response.json({ok:true,result:true});
+ try {
+  const env={TELEGRAM_BOT_TOKEN:"test",ROOMS:{idFromName:id=>id,get:()=>stub}};
+  await routeUpdate({callback_query:{id:"cb1",data:"mb:abstain:-10077",from:{id:111},message:{chat:{id:111,type:"private"}}}},env);
+  assert.deepEqual(calls,[{path:"/vote/abstain",body:{actorId:"111"}}]);
+ } finally {globalThis.fetch=previous;}
+});
