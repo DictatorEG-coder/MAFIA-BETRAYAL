@@ -237,7 +237,7 @@ export class RoomCoordinator {
       await this.ctx.storage.put("room",state);
       if(state.game.phase!=="ended") await this.ctx.storage.setAlarm(state.deadline);
       else await this.ctx.storage.deleteAlarm?.();
-      return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,monitoring:result.monitoring,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
+      return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,monitoring:result.monitoring,actionReports:result.actionReports,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
     }
     if (url.pathname === "/avenge" && request.method === "POST") {
       const {actorId,targetId}=await request.json();
