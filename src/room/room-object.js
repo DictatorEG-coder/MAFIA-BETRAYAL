@@ -111,7 +111,7 @@ export class RoomCoordinator {
       const state=await this.ctx.storage.get("room");
       if(!state) return Response.json({players:[]});
       const alive=new Set(state.game?.players.filter(p=>p.alive).map(p=>p.id)??[]);
-      return Response.json({players:Object.values(state.players).map((p,index)=>({slot:index+1,id:p.id,name:p.name,alive:state.game?alive.has(p.id):true}))});
+      return Response.json({players:Object.values(state.players).map((p,index)=>({slot:index+1,id:p.id,name:p.name,role:state.game?.players.find(player=>player.id===p.id)?.role??null,alive:state.game?alive.has(p.id):true}))});
     }
     if (url.pathname === "/myrole" && request.method === "POST") {
       const {actorId}=await request.json();
