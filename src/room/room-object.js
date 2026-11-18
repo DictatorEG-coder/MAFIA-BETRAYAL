@@ -228,6 +228,7 @@ export class RoomCoordinator {
       if(state.game.phase!=="ended") state.deadline=Date.now()+120_000;
       if(state.game.phase==="ended") {
         state.status="ended";
+        await this.persistGameResults(state);
         if(this.env.DB) {
           await this.env.DB.prepare("UPDATE games SET status=?,ended_at=?,result_json=? WHERE game_id=?").bind("ended",new Date(state.game.endedAt).toISOString(),JSON.stringify(state.game.winner),state.game.id).run();
           await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?").bind("ended",new Date().toISOString(),state.chatId).run();
@@ -247,6 +248,7 @@ export class RoomCoordinator {
         if(state.game.phase==="ended") state.status="ended";
         await this.ctx.storage.put("room",state);
         if(state.game.phase==="ended") {
+          await this.persistGameResults(state);
           await this.ctx.storage.deleteAlarm?.();
           if(this.env.DB) {
             await this.env.DB.prepare("UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?")
@@ -319,6 +321,7 @@ export class RoomCoordinator {
         if(game.phase==="ended") await this.ctx.storage.deleteAlarm?.();
         else await this.ctx.storage.setAlarm(state.deadline);
         if(game.phase==="ended") {
+          await this.persistGameResults(state);
           if(this.env.DB) {
             await this.env.DB.prepare("UPDATE games SET status=?,ended_at=?,result_json=? WHERE game_id=?")
               .bind("ended",new Date(game.endedAt ?? Date.now()).toISOString(),JSON.stringify(game.winner),game.id).run();
@@ -487,6 +490,7 @@ export class RoomCoordinator {
     game.stateVersion=(game.stateVersion??0)+1;
     state.stateVersion=(state.stateVersion??0)+1;
     if(state.status==="ended") {
+      await this.persistGameResults(state);
       const roles={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
       const reveal=game.players.map(player=>name(player.id)+" — "+(roles[player.role]??player.role)+(player.alive?" (باقٍ)":" (مقصى)"));
       announcement+="\nكشف الأدوار:\n"+reveal.join("\n");
