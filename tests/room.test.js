@@ -204,3 +204,24 @@ test("public history and match stats can be read without revealing roles",async(
  assert.equal(stats.players,2);
  assert.equal(stats.survivors,1);
 });
+
+test("a new joiner can recover a lobby whose saved creator is no longer in its roster",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{chatId:"-100",creatorId:"old-creator",creatorName:"Old",status:"lobby",players:{"1":{id:"1",name:"Player 1"}},stateVersion:1});
+ const joined=await call(room,"/join",{chatId:"-100",actor:{id:"2",name:"Player 2"}});
+ const data=await joined.json();
+ assert.equal(joined.status,200);
+ assert.equal(data.creatorId,"2");
+ assert.equal(data.creatorName,"Player 2");
+ assert.equal(data.isCreator,true);
+});
+
+test("non-creator prepare response identifies the room leader",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{chatId:"-100",creatorId:"1",creatorName:"Room Leader",status:"lobby",players:{"1":{id:"1",name:"Room Leader"},"2":{id:"2",name:"Player 2"}},stateVersion:1});
+ const response=await call(room,"/prepare",{actorId:"2"});
+ const data=await response.json();
+ assert.equal(response.status,403);
+ assert.equal(data.error,"creator_only");
+ assert.equal(data.creatorName,"Room Leader");
+});
