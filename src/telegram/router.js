@@ -354,7 +354,14 @@ export async function routeUpdate(update,env) {
    await sendMessage(env,item.actorId,"نتيجة المراقبة في "+(target?.name??"اللاعب")+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له."));
   }
   const dead=(data.deaths??[]).map(id=>players.find(p=>p.id===id)?.name??"لاعب");
-  await sendMessage(env,chatId,(dead.length?"انتهى الليل. المقصى: "+dead.join("، "):"انتهى الليل دون إقصاء.")+"\nالمرحلة التالية: "+data.phase);
+   if(dead.length) {
+    const caption="🚨 عُثر على جثة مع أول ضوء...\n"+dead.join("، ")+" لم يعد بين الأحياء.";
+    await sendScenePhoto(env,chatId,SCENE_MEDIA.death,caption,{reply_markup:{inline_keyboard:[[{text:"🔊 مؤثر صرخة الرعب",url:SCREAM_SFX_PAGE}]]}});
+    await sendMessage(env,chatId,"انتهى الليل. المقصى: "+dead.join("، ")+"\nالمرحلة التالية: "+data.phase);
+   } else {
+    await sendScenePhoto(env,chatId,SCENE_MEDIA.night,"🌑 مرّت الليلة دون جثة... لكن الصمت لا يعني الأمان.");
+    await sendMessage(env,chatId,"انتهى الليل دون إقصاء.\nالمرحلة التالية: "+data.phase);
+   }
   if(data.phase==="ended") await announceResult(env,chatId); return;
  }
  if(command==="/defendant") {
