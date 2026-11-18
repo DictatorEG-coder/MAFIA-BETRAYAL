@@ -240,7 +240,10 @@ export async function routeUpdate(update,env) {
   const players=await roster(env,chatId);
   const accused=players.find(p=>p.id===info.defendant);
   for(const player of players.filter(p=>p.alive)) {
-   await sendMessage(env,player.id,"🗳️ صوّت سرًا على المتهم: "+(accused?.name??"اللاعب"),{reply_markup:{inline_keyboard:[[{text:accused?.name??"المتهم",callback_data:"mb:act:"+chatId+":vote:"+info.defendant}],[{text:"امتناع عن التصويت",callback_data:"mb:abstain:"+chatId}]]}});
+   const rows=[];
+   if(accused&&player.id!==accused.id) rows.push([{text:accused.name,callback_data:"mb:act:"+chatId+":vote:"+info.defendant}]);
+   rows.push([{text:"امتناع عن التصويت",callback_data:"mb:abstain:"+chatId}]);
+   await sendMessage(env,player.id,"🗳️ صوّت سرًا على المتهم: "+(accused?.name??"اللاعب"),{reply_markup:{inline_keyboard:rows}});
   }
   await sendMessage(env,chatId,"بدأ التصويت السري لمدة 60 ثانية. وصلت أزرار التصويت إلى الخاص."); return;
  }
