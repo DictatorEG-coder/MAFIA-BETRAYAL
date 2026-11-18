@@ -138,7 +138,7 @@ export async function routeUpdate(update,env) {
   if(privateActions[command]) {
    const roomId=parts[1]; const slot=Number(parts[2]);
    if(!roomId || !/^-?[0-9]+$/.test(roomId) || !Number.isInteger(slot) || slot<1 || slot>10) {
-    await sendMessage(env,chatId,"الصيغة: "+command+" رقم_المجموعة رقم_اللاعب"); return;
+    await sendMessage(env,chatId,"استخدم الأزرار التي تصلك في الخاص لتنفيذ أفعالك، ولا تحتاج إلى كتابة أرقام."); return;
    }
    const players=await roster(env,roomId); const target=players.find(p=>p.slot===slot&&p.alive);
    if(!target) { await sendMessage(env,chatId,"اللاعب غير موجود أو أُقصي، أو أن رقم المجموعة غير صحيح."); return; }
@@ -229,19 +229,17 @@ export async function routeUpdate(update,env) {
  }
  if(command==="/openvote") {
   const response=await roomCall(env,chatId,"/open-voting",{actorId:actor.id}); const data=await response.json();
-  await sendMessage(env,chatId,response.ok?"بدأ التصويت السري. استخدم /vote رقم.":"تعذر فتح التصويت: "+(data.error??"خطأ")); return;
+  if(!response.ok) { await sendMessage(env,chatId,"تعذر فتح التصويت: "+(data.error??"خطأ")); return; }
+  const info=await (await roomCall(env,chatId,"/room-info")).json();
+  const players=await roster(env,chatId);
+  const accused=players.find(p=>p.id===info.defendant);
+  for(const player of players.filter(p=>p.alive)) {
+   await sendMessage(env,player.id,"🗳️ صوّت سرًا على المتهم: "+(accused?.name??"اللاعب"),{reply_markup:{inline_keyboard:[[{text:accused?.name??"المتهم",callback_data:"mb:act:"+chatId+":vote:"+info.defendant}],[{text:"امتناع عن التصويت",callback_data:"mb:abstain:"+chatId}]]}});
+  }
+  await sendMessage(env,chatId,"بدأ التصويت السري لمدة 60 ثانية. وصلت أزرار التصويت إلى الخاص."); return;
  }
  if(command==="/finishvote") {
-  const response=await roomCall(env,chatId,"/vote/finish",{actorId:actor.id}); const data=await response.json();
-  if(!response.ok) { await sendMessage(env,chatId,"تعذر إنهاء التصويت: "+(data.error??"خطأ")); return; }
-  const players=await roster(env,chatId); const target=players.find(p=>p.id===data.eliminated);
-  const fallen=players.find(p=>p.id===data.eliminated&&p.role==="avenger");
-  if(fallen) await sendMessage(env,fallen.id,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:",{reply_markup:{inline_keyboard:players.filter(p=>p.alive).map(p=>[{text:p.name,callback_data:"mb:act:"+chatId+":avenge:"+p.id}])}});
-  if(data.gamblerId&&data.gamblerMission) await sendMessage(env,data.gamblerId,"🎲 مهمتك السرية الجديدة: "+(GAMBLER_MISSION_TEXTS[data.gamblerMission]??"أكمل مهمتك."));
-  await sendMessage(env,chatId,data.eliminated?"تم إقصاء "+(target?.name??"لاعب")+". لن يُكشف دوره حتى نهاية الجولة.":"لم يُقصَ أحد ("+data.reason+").");
-  if(data.phase==="ended") await announceResult(env,chatId);
-  else await sendMessage(env,chatId,"تبدأ المرحلة الليلية التالية. أرسلوا أفعالكم السرية ثم استخدم قائد الغرفة /resolve.");
-  return;
+  await sendMessage(env,chatId,"ينتهي التصويت تلقائيًا بعد 60 ثانية، ثم يحصل من لم يصوّت على مهلة إضافية قدرها 10 ثوانٍ. لا حاجة لإنهائه يدويًا."); return;
  }
  await sendMessage(env,chatId,"أمر غير معروف. أرسل /rules لعرض الأوامر.");
 }
