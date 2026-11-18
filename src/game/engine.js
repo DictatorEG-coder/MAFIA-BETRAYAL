@@ -25,7 +25,7 @@ export function avenge(game, actorId, targetId) {
   actor.avenged=true;
   target.alive=false;
   target.health=0;
-  game.winner=getWinner(game.players,game.round) ?? game.winner;
+  const recalculatedWinner=getWinner(game.players,game.round);\n  game.winner=game.phase==="ended"?(game.winner??recalculatedWinner):recalculatedWinner;
   if(game.winner) { game.phase="ended"; game.endedAt=Date.now(); }
   game.stateVersion++;
   return {targetId:target.id,winner:game.winner};
