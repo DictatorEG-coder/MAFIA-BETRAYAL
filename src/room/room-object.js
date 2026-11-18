@@ -1,7 +1,7 @@
 import { createGame } from "../game/engine.js";
 import { resolveNight, submitNightAction } from "../game/night.js";
 import { nominate, selectDefendant } from "../game/day.js";
-import { castVote, finishVoting, avenge } from "../game/engine.js";
+import { castVote, castAbstention, finishVoting, avenge } from "../game/engine.js";
 import { sendMessage } from "../telegram/api.js";
 import { gamblerMissionText } from "../game/gambler.js";
 
@@ -38,9 +38,10 @@ export class RoomCoordinator {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/join" && request.method === "POST") {
-      const { chatId, actor } = await request.json();
+      const { chatId, actor, chatTitle } = await request.json();
       if (!chatId || !actor?.id) return Response.json({ error: "invalid_input" }, { status: 400 });
-      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };
+      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), chatTitle:String(chatTitle ?? "المجموعة"), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };
+      if (chatTitle) state.chatTitle=String(chatTitle);
       if (state.chatId !== String(chatId)) return Response.json({ error:"room_mismatch" }, { status:409 });
       if (!state.creatorId) state.creatorId=String(actor.id);
       if (state.status !== "lobby") return Response.json({ error:"game_in_progress" }, { status:409 });
@@ -111,7 +112,7 @@ export class RoomCoordinator {
       const state=await this.ctx.storage.get("room");
       if(!state) return Response.json({players:[]});
       const alive=new Set(state.game?.players.filter(p=>p.alive).map(p=>p.id)??[]);
-      return Response.json({players:Object.values(state.players).map((p,index)=>({slot:index+1,id:p.id,name:p.name,alive:state.game?alive.has(p.id):true}))});
+      return Response.json({players:Object.values(state.players).map((p,index)=>({slot:index+1,id:p.id,name:p.name,role:state.game?.players.find(player=>player.id===p.id)?.role??null,alive:state.game?alive.has(p.id):true}))});
     }
     if (url.pathname === "/myrole" && request.method === "POST") {
       const {actorId}=await request.json();
@@ -121,6 +122,11 @@ export class RoomCoordinator {
       if(!player) return Response.json({error:"not_a_player"},{status:403});
       const allies=player.faction==="mafia"?state.game.players.filter(p=>p.faction==="mafia"&&p.id!==player.id).map(p=>state.players[p.id]?.name??p.id):[];
       return Response.json({role:player.role,allies,mission:player.mission??null});
+    }
+    if (url.pathname === "/room-info") {
+      const state=await this.ctx.storage.get("room");
+      if(!state) return Response.json({error:"room_not_found"},{status:404});
+      return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null,defendant:state.game?.defendant??null});
     }
     if (url.pathname === "/result") {
       const state=await this.ctx.storage.get("room");
@@ -161,7 +167,7 @@ export class RoomCoordinator {
     if (url.pathname === "/avenge" && request.method === "POST") {
       const {actorId,targetId}=await request.json();
       const state=await this.ctx.storage.get("room");
-      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});
+      if(!state?.game || !["playing","ended"].includes(state.status)) return Response.json({error:"no_active_game"},{status:409});
       try {
         const result=avenge(state.game,actorId,targetId);
         if(state.game.phase==="ended") state.status="ended";
@@ -205,7 +211,7 @@ export class RoomCoordinator {
       const state=await this.ctx.storage.get("room");
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if(!state?.game || state.game.phase!=="defense") return Response.json({error:"defense_not_active"},{status:409});
-      state.game.phase="voting"; state.game.stateVersion++; state.stateVersion++;
+      state.game.phase="voting"; state.game.votes={}; state.game.abstentions={}; state.voteGrace=false; state.game.stateVersion++; state.stateVersion++;
       state.deadline=Date.now()+60_000;
       await this.ctx.storage.put("room",state);
       await this.ctx.storage.setAlarm(state.deadline);
@@ -216,6 +222,13 @@ export class RoomCoordinator {
       const state=await this.ctx.storage.get("room");
       if(!state?.game) return Response.json({error:"no_active_game"},{status:409});
       try { castVote(state.game,actorId,targetId); await this.ctx.storage.put("room",state); return Response.json({ok:true}); }
+      catch(e){ return Response.json({error:e.message},{status:400}); }
+    }
+    if (url.pathname === "/vote/abstain" && request.method === "POST") {
+      const {actorId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});
+      try { castAbstention(state.game,actorId); await this.ctx.storage.put("room",state); return Response.json({ok:true}); }
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
     if (url.pathname === "/vote/finish" && request.method === "POST") {
@@ -257,69 +270,107 @@ export class RoomCoordinator {
 
   async alarm() {
     const state=await this.ctx.storage.get("room");
-    if(!state||state.status!=="playing"||!state.game) return;
-    if(!state.deadline) return;
+    if(!state||state.status!=="playing"||!state.game||!state.deadline) return;
     if(state.deadline>Date.now()) { await this.ctx.storage.setAlarm(state.deadline); return; }
 
     const game=state.game;
     let announcement="";
-    let privateNightReports=[];
+    const alive=()=>game.players.filter(p=>p.alive);
+    const name=id=>state.players[id]?.name??"لاعب";
+    const sendChoices=async (player,heading,action,targets,includeAbstain=false)=>{
+      const rows=targets.map(target=>[{text:target.name??name(target.id),callback_data:"mb:act:"+state.chatId+":"+action+":"+target.id}]);
+      if(includeAbstain) rows.push([{text:"امتناع عن التصويت",callback_data:"mb:abstain:"+state.chatId}]);
+      if(rows.length) {
+        try { await sendMessage(this.env,player.id,heading,{reply_markup:{inline_keyboard:rows}}); }
+        catch(error) { console.error("private_choice_delivery_failed",error?.message??"unknown"); }
+      }
+    };
+    let privateReports=[];
+
     if(game.phase==="night") {
       const result=resolveNight(game);
-      const names=id=>state.players[id]?.name??"لاعب";
-      privateNightReports=[
-        ...(result.investigations??[]).map(item=>({id:item.actorId,text:"نتيجة التحقيق في "+names(item.targetId)+": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه")})),
-        ...(result.monitoring??[]).map(item=>({id:item.actorId,text:"نتيجة المراقبة في "+names(item.targetId)+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له.")}))
+      for(const id of result.deaths) {
+        const fallen=game.players.find(player=>player.id===id&&player.role==="avenger");
+        if(fallen) await sendChoices(fallen,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:","avenge",alive().map(player=>({...player,name:name(player.id)})));
+      }
+      privateReports=[
+        ...(result.investigations??[]).map(item=>({id:item.actorId,text:"نتيجة التحقيق في "+name(item.targetId)+": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه")})),
+        ...(result.monitoring??[]).map(item=>({id:item.actorId,text:"نتيجة المراقبة في "+name(item.targetId)+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له.")}))
       ];
-      announcement=result.deaths.length
-        ?"انتهى الليل. تم إقصاء: "+result.deaths.map(names).join("، ")
-        :"انتهى الليل دون إقصاء.";
+      announcement=result.deaths.length?"انتهى الليل. تم إقصاء: "+result.deaths.map(name).join("، "):"انتهى الليل دون إقصاء.";
       if(game.phase==="ended") {
         state.status="ended";
-        announcement+="\\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
+        announcement+="\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
       } else {
         game.phase="day";
         state.deadline=Date.now()+120_000;
-        announcement+="\\nبدأ النهار. أمامكم 120 ثانية للنقاش.";
+        announcement+="\n☀️ بدأ النهار. أمامكم 120 ثانية للنقاش.";
       }
     } else if(game.phase==="day") {
       game.phase="nomination";
       state.deadline=Date.now()+30_000;
-      announcement="انتهى النقاش. أمامكم 30 ثانية للترشيح السري: /nominate رقم_المجموعة رقم_اللاعب";
+      announcement="انتهى النقاش. أمامكم 30 ثانية للترشيح السري. أرسلنا قائمة اللاعبين إلى الخاص.";
+      for(const player of alive()) {
+        const targets=alive().filter(target=>target.id!==player.id).map(target=>({...target,name:name(target.id)}));
+        await sendChoices(player,"🗳️ اختر لاعبًا لترشيحه سرًا:", "nominate",targets);
+      }
     } else if(game.phase==="nomination") {
       const selected=selectDefendant(game);
       if(selected.defendant) {
         state.deadline=Date.now()+45_000;
-        announcement="انتهى الترشيح. بدأت مهلة الدفاع، 45 ثانية.";
+        announcement="انتهى الترشيح. المتهم: "+name(selected.defendant)+". تبدأ الآن مهلة الدفاع لمدة 45 ثانية.";
       } else {
         game.phase="night";
-        game.round++;
         state.deadline=Date.now()+90_000;
-        announcement="لم يُرشح أحد. يبدأ الليل التالي.";
+        announcement="انتهت مهلة الترشيح دون ترشيحات. لم يُحدد متهم، ولذلك لن يحدث تصويت هذه الجولة. يبدأ الليل التالي لمدة 90 ثانية.";
       }
     } else if(game.phase==="defense") {
       game.phase="voting";
+      game.votes={};
+      game.abstentions={};
+      state.voteGrace=false;
       state.deadline=Date.now()+60_000;
-      announcement="انتهى الدفاع. بدأ التصويت السري لمدة 60 ثانية: /vote رقم_المجموعة رقم_اللاعب";
+      const accused=game.players.find(player=>player.id===game.defendant);
+      announcement="انتهى الدفاع. بدأ التصويت السري لمدة 60 ثانية. أرسلنا أزرار التصويت إلى الخاص.";
+      for(const player of alive()) {
+        await sendChoices(player,"🗳️ صوّت سرًا على المتهم: "+name(accused?.id), "vote",accused&&player.id!==accused.id?[{...accused,name:name(accused.id)}]:[],true);
+      }
     } else if(game.phase==="voting") {
+      const pending=alive().filter(player=>!game.votes?.[player.id]&&!game.abstentions?.[player.id]);
+      if(pending.length && !state.voteGrace) {
+        state.voteGrace=true;
+        state.deadline=Date.now()+10_000;
+        const accused=game.players.find(player=>player.id===game.defendant);
+        announcement="⏳ لم يصوّت بعد: "+pending.map(player=>name(player.id)).join("، ")+". أمامهم 10 ثوانٍ إضافية، ثم سيُتجاوز تصويتهم.";
+        for(const player of pending) {
+          await sendChoices(player,"⏳ بقيت 10 ثوانٍ. صوّت على "+name(accused?.id)+" أو اختر الامتناع:","vote",accused&&player.id!==accused.id?[{...accused,name:name(accused.id)}]:[],true);
+        }
+        await this.ctx.storage.put("room",state);
+        await this.ctx.storage.setAlarm(state.deadline);
+        if(this.env.TELEGRAM_BOT_TOKEN) await sendMessage(this.env,state.chatId,announcement);
+        return;
+      }
+      const skipped=state.voteGrace?pending:[];
+      const abstained=alive().filter(player=>game.abstentions?.[player.id]);
+      const abstainedText=abstained.length?"\nامتنع عن التصويت: "+abstained.map(player=>name(player.id)).join("، ")+".":"";
+      state.voteGrace=false;
       const completed=finishVoting(game);
       state.game=completed.game;
-      const activeGambler=completed.game.players.find(p=>p.role==="gambler"&&p.alive);
-      if(completed.game.phase!=="ended" && activeGambler?.mission && this.env.TELEGRAM_BOT_TOKEN) {
-        try { await sendMessage(this.env,activeGambler.id,"🎲 مهمتك السرية الجديدة لهذا الدور: "+gamblerMissionText(activeGambler.mission)); }
-        catch(error) { console.error("gambler_mission_delivery_failed",error?.message??"unknown"); }
+      if(completed.result.eliminated) {
+        const fallen=completed.game.players.find(player=>player.id===completed.result.eliminated&&player.role==="avenger");
+        if(fallen) await sendChoices(fallen,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:","avenge",alive().map(player=>({...player,name:name(player.id)})));
       }
+      const activeGambler=completed.game.players.find(player=>player.role==="gambler"&&player.alive);
+      if(completed.game.phase!=="ended"&&activeGambler?.mission&&this.env.TELEGRAM_BOT_TOKEN) {
+        try { await sendMessage(this.env,activeGambler.id,"🎲 مهمتك السرية الجديدة لهذا الدور: "+gamblerMissionText(activeGambler.mission)); } catch {}
+      }
+      const skippedText=skipped.length?"\nلم يصوّت: "+skipped.map(player=>name(player.id)).join("، ")+" — تم تجاوز أصواتهم.":"";
       if(completed.game.phase==="ended") {
         state.status="ended";
-        announcement=completed.result.eliminated
-          ?"انتهى التصويت وتم إقصاء "+(state.players[completed.result.eliminated]?.name??"لاعب")+"."
-          :"انتهى التصويت دون إقصاء.";
-        announcement+="\\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
+        announcement=(completed.result.eliminated?"انتهى التصويت وتم إقصاء "+name(completed.result.eliminated)+".":"انتهى التصويت دون إقصاء.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
       } else {
         state.deadline=Date.now()+90_000;
-        announcement=completed.result.eliminated
-          ?"تم إقصاء "+(state.players[completed.result.eliminated]?.name??"لاعب")+". يبدأ الليل التالي."
-          :"لم يُقصَ أحد. يبدأ الليل التالي.";
+        announcement=(completed.result.eliminated?"تم إقصاء "+name(completed.result.eliminated)+".":"لم يُقصَ أحد.")+abstainedText+skippedText+"\n🌙 يبدأ الليل التالي لمدة 90 ثانية.";
       }
     } else {
       return;
@@ -328,23 +379,21 @@ export class RoomCoordinator {
     game.stateVersion=(game.stateVersion??0)+1;
     state.stateVersion=(state.stateVersion??0)+1;
     if(state.status==="ended") {
-      const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
-      const reveal=game.players.map(player=>(state.players[player.id]?.name??player.id)+" — "+(roleNames[player.role]??player.role)+(player.alive?" (باقٍ)":" (مقصى)"));
-      announcement+="\\nكشف الأدوار:\\n"+reveal.join("\\n");
+      const roles={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+      const reveal=game.players.map(player=>name(player.id)+" — "+(roles[player.role]??player.role)+(player.alive?" (باقٍ)":" (مقصى)"));
+      announcement+="\nكشف الأدوار:\n"+reveal.join("\n");
       state.deadline=null;
       await this.ctx.storage.deleteAlarm?.();
       if(this.env.DB) {
-        await this.env.DB.prepare("UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?")
-          .bind(new Date(game.endedAt??Date.now()).toISOString(),JSON.stringify(game.winner),game.id).run();
-        await this.env.DB.prepare("UPDATE rooms SET status='ended',updated_at=? WHERE room_id=?")
-          .bind(new Date().toISOString(),state.chatId).run();
+        await this.env.DB.prepare("UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?").bind(new Date(game.endedAt??Date.now()).toISOString(),JSON.stringify(game.winner),game.id).run();
+        await this.env.DB.prepare("UPDATE rooms SET status='ended',updated_at=? WHERE room_id=?").bind(new Date().toISOString(),state.chatId).run();
       }
     } else {
       await this.ctx.storage.setAlarm(state.deadline);
     }
     await this.ctx.storage.put("room",state);
     if(this.env.TELEGRAM_BOT_TOKEN) {
-      for(const report of privateNightReports) {
+      for(const report of privateReports) {
         try { await sendMessage(this.env,report.id,report.text); }
         catch(error) { console.error("private_night_report_failed",error?.message??"unknown"); }
       }

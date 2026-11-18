@@ -2,14 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { RoomCoordinator } from "../src/room/room-object.js";
 
-function makeRoom() {
+function makeRoom(env={}) {
  const values=new Map();
  const ctx={storage:{
   get:async k=>values.get(k),
   put:async(k,v)=>values.set(k,structuredClone(v)),
   setAlarm:async()=>{}
  }};
- return new RoomCoordinator(ctx,{});
+ return new RoomCoordinator(ctx,env);
 }
 async function call(room,path,body) {
  return room.fetch(new Request("https://room"+path,{
@@ -92,4 +92,61 @@ test("durable alarm advances the day into nomination after its deadline",async()
  const state=await room.ctx.storage.get("room");
  assert.equal(state.game.phase,"nomination");
  assert.ok(state.deadline>Date.now());
+});
+
+test("abstention endpoint records an explicit skip during voting",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{chatId:"-100",creatorId:"1",status:"playing",players:{"1":{id:"1",name:"P1"}},game:{phase:"voting",players:[{id:"1",alive:true}],votes:{},abstentions:{}},stateVersion:1});
+ const response=await call(room,"/vote/abstain",{actorId:"1"});
+ assert.equal(response.status,200);
+ const state=await room.ctx.storage.get("room");
+ assert.equal(state.game.abstentions["1"],true);
+});
+
+test("a round with no nominations advances the round only once",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{chatId:"-100",creatorId:"1",status:"playing",players:{},stateVersion:1,deadline:Date.now()-1,game:{phase:"nomination",round:1,stateVersion:1,players:[],nominations:{}}});
+ await room.alarm();
+ const state=await room.ctx.storage.get("room");
+ assert.equal(state.game.phase,"night");
+ assert.equal(state.game.round,2);
+});
+
+test("voting gives missing players a ten-second grace period then skips them",async()=>{
+ const room=makeRoom({TELEGRAM_BOT_TOKEN:"test"});
+ const previous=globalThis.fetch; const sent=[];
+ globalThis.fetch=async(url,options)=>{
+  sent.push(JSON.parse(options.body));
+  return Response.json({ok:true,result:{message_id:1}});
+ };
+ try {
+  await room.ctx.storage.put("room",{
+   chatId:"-100",creatorId:"3",status:"playing",
+   players:{
+    "1":{id:"1",name:"Player 1"},"2":{id:"2",name:"Player 2"},
+    "3":{id:"3",name:"Player 3"},"4":{id:"4",name:"Player 4"}
+   },
+   stateVersion:1,deadline:Date.now()-1,voteGrace:false,
+   game:{phase:"voting",round:1,stateVersion:1,defendant:"2",votes:{"3":"2","4":"2"},abstentions:{},nominations:{},players:[
+    {id:"1",role:"citizen",faction:"city",alive:true,health:100},
+    {id:"2",role:"boss",faction:"mafia",alive:true,health:100},
+    {id:"3",role:"citizen",faction:"city",alive:true,health:100},
+    {id:"4",role:"doctor",faction:"city",alive:true,health:100}
+   ]}
+  });
+  await room.alarm();
+  let state=await room.ctx.storage.get("room");
+  assert.equal(state.voteGrace,true);
+  assert.ok(state.deadline>Date.now());
+  assert.ok(sent.some(item=>String(item.chat_id)==="-100"&&/10 ثوانٍ/.test(item.text)));
+  assert.ok(sent.some(item=>String(item.chat_id)==="1"&&item.reply_markup.inline_keyboard.some(row=>row.some(button=>button.callback_data==="mb:abstain:-100"))));
+
+  state.deadline=Date.now()-1;
+  await room.ctx.storage.put("room",state);
+  await room.alarm();
+  state=await room.ctx.storage.get("room");
+  assert.equal(state.voteGrace,false);
+  assert.equal(state.status,"ended");
+  assert.ok(sent.some(item=>String(item.chat_id)==="-100"&&/لم يصوّت: Player 1، Player 2/.test(item.text)));
+ } finally { globalThis.fetch=previous; }
 });

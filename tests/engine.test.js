@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createGame, castVote, avenge, finishVoting } from "../src/game/engine.js";
+import { createGame, castVote, castAbstention, avenge, finishVoting } from "../src/game/engine.js";
 
 test("game initializes with private roles and stable player state", () => {
   const game = createGame(["1","2","3","4","5"], () => 0.1);
@@ -51,4 +51,28 @@ test("gambler receives a rotating secret mission and can win individually",()=>{
  const {game:ended}=finishVoting(game);
  assert.equal(ended.phase,"ended");
  assert.equal(ended.winner.winner,"gambler");
+});
+
+test("players can explicitly abstain once and abstention blocks a later vote",()=>{
+ const game=createGame(["1","2","3","4","5"],()=>0.2);
+ game.phase="voting"; game.defendant="2";
+ castAbstention(game,"1");
+ assert.equal(game.abstentions["1"],true);
+ assert.throws(()=>castAbstention(game,"1"),/already submitted/);
+ assert.throws(()=>castVote(game,"1","2"),/already submitted/);
+ const completed=finishVoting(game);
+ assert.equal(completed.result.reason,"no_valid_votes");
+ assert.deepEqual(completed.game.abstentions,{});
+});
+
+test("avenger retaliation does not erase an already declared winner",()=>{
+ const game={phase:"ended",round:2,stateVersion:1,winner:{winner:"gambler",reason:"secret_mission_completed"},players:[
+  {id:"a",role:"avenger",faction:"city",alive:false,health:0},
+  {id:"m",role:"boss",faction:"mafia",alive:true,health:100},
+  {id:"c",role:"citizen",faction:"city",alive:true,health:100},
+  {id:"d",role:"doctor",faction:"city",alive:true,health:100},
+  {id:"s",role:"survivor",faction:"independent",alive:true,health:100}
+ ]};
+ avenge(game,"a","m");
+ assert.equal(game.winner.winner,"gambler");
 });
