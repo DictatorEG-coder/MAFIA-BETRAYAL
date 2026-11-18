@@ -65,7 +65,6 @@ jobs:
         run: wrangler deploy
 
       - name: Set Telegram webhook (optional on first deployment)
-        if: env.TELEGRAM_WEBHOOK_URL != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
