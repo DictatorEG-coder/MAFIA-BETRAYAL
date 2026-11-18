@@ -276,6 +276,10 @@ export class RoomCoordinator {
 
     if(game.phase==="night") {
       const result=resolveNight(game);
+      for(const id of result.deaths) {
+        const fallen=game.players.find(player=>player.id===id&&player.role==="avenger");
+        if(fallen) await sendChoices(fallen,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:","avenge",alive().map(player=>({...player,name:name(player.id)})));
+      }
       privateReports=[
         ...(result.investigations??[]).map(item=>({id:item.actorId,text:"نتيجة التحقيق في "+name(item.targetId)+": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه")})),
         ...(result.monitoring??[]).map(item=>({id:item.actorId,text:"نتيجة المراقبة في "+name(item.targetId)+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له.")}))
@@ -338,6 +342,10 @@ export class RoomCoordinator {
       state.voteGrace=false;
       const completed=finishVoting(game);
       state.game=completed.game;
+      if(completed.result.eliminated) {
+        const fallen=completed.game.players.find(player=>player.id===completed.result.eliminated&&player.role==="avenger");
+        if(fallen) await sendChoices(fallen,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:","avenge",alive().map(player=>({...player,name:name(player.id)})));
+      }
       const activeGambler=completed.game.players.find(player=>player.role==="gambler"&&player.alive);
       if(completed.game.phase!=="ended"&&activeGambler?.mission&&this.env.TELEGRAM_BOT_TOKEN) {
         try { await sendMessage(this.env,activeGambler.id,"🎲 مهمتك السرية الجديدة لهذا الدور: "+gamblerMissionText(activeGambler.mission)); } catch {}
