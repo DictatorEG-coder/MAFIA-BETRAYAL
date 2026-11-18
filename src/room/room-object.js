@@ -123,7 +123,7 @@ export class RoomCoordinator {
       const allies=player.faction==="mafia"?state.game.players.filter(p=>p.faction==="mafia"&&p.id!==player.id).map(p=>state.players[p.id]?.name??p.id):[];
       return Response.json({role:player.role,allies,mission:player.mission??null});
     }
-    if (url.pathname === "/room-info") {\n      const state=await this.ctx.storage.get("room");\n      if(!state) return Response.json({error:"room_not_found"},{status:404});\n      return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null});\n    }\n    if (url.pathname === "/result") {
+    if (url.pathname === "/room-info") {\n      const state=await this.ctx.storage.get("room");\n      if(!state) return Response.json({error:"room_not_found"},{status:404});\n      return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null,defendant:state.game?.defendant??null});\n    }\n    if (url.pathname === "/result") {
       const state=await this.ctx.storage.get("room");
       if(!state || state.status!=="ended") return Response.json({error:"game_not_ended"},{status:409});
       return Response.json({winner:state.game.winner,players:state.game.players.map(p=>({id:p.id,role:p.role,faction:p.faction,alive:p.alive}))});
@@ -340,6 +340,8 @@ export class RoomCoordinator {
         return;
       }
       const skipped=state.voteGrace?pending:[];
+      const abstained=alive().filter(player=>game.abstentions?.[player.id]);
+      const abstainedText=abstained.length?"\nامتنع عن التصويت: "+abstained.map(player=>name(player.id)).join("، ")+".":"";
       state.voteGrace=false;
       const completed=finishVoting(game);
       state.game=completed.game;
@@ -354,7 +356,7 @@ export class RoomCoordinator {
       const skippedText=skipped.length?"\nلم يصوّت: "+skipped.map(player=>name(player.id)).join("، ")+" — تم تجاوز أصواتهم.":"";
       if(completed.game.phase==="ended") {
         state.status="ended";
-        announcement=(completed.result.eliminated?"انتهى التصويت وتم إقصاء "+name(completed.result.eliminated)+".":"انتهى التصويت دون إقصاء.")+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
+        announcement=(completed.result.eliminated?"انتهى التصويت وتم إقصاء "+name(completed.result.eliminated)+".":"انتهى التصويت دون إقصاء.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
       } else {
         state.deadline=Date.now()+90_000;
         announcement=(completed.result.eliminated?"تم إقصاء "+name(completed.result.eliminated)+".":"لم يُقصَ أحد.")+skippedText+"\n🌙 يبدأ الليل التالي.";
