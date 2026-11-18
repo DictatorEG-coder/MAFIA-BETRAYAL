@@ -12,7 +12,7 @@ export function createGame(playerIds, random = Math.random, now = Date.now()) {
   if(gambler) gambler.mission=assignGamblerMission(random);
   return {
     id: crypto.randomUUID(), phase: "night", round: 1, stateVersion: 1,
-    startedAt: now, players, votes: {}, actions: {}, winner: null, endedAt: null
+    startedAt: now, players, votes: {}, abstentions: {}, actions: {}, winner: null, endedAt: null
   };
 }
 
@@ -36,9 +36,20 @@ export function castVote(game, voterId, targetId) {
   const voter = game.players.find(p => p.id === String(voterId) && p.alive);
   const target = game.players.find(p => p.id === String(targetId) && p.alive);
   if (!voter || !target || voter.id === target.id) throw new Error("Invalid vote");
-  if (game.votes[voter.id]) throw new Error("Vote already submitted");
+  if (game.votes[voter.id] || game.abstentions?.[voter.id]) throw new Error("Vote already submitted");
   if (!game.defendant || target.id !== game.defendant) throw new Error("Votes must target the accused player");
   game.votes[voter.id] = target.id;
+  game.stateVersion++;
+  return game;
+}
+
+export function castAbstention(game, voterId) {
+  if (game.phase !== "voting") throw new Error("Voting is not open");
+  const voter = game.players.find(p => p.id === String(voterId) && p.alive);
+  if (!voter) throw new Error("Invalid voter");
+  if (game.votes[voter.id] || game.abstentions?.[voter.id]) throw new Error("Vote already submitted");
+  game.abstentions ??= {};
+  game.abstentions[voter.id] = true;
   game.stateVersion++;
   return game;
 }
