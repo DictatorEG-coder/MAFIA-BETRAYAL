@@ -54,10 +54,16 @@ export class RoomCoordinator {
     if (url.pathname === "/join" && request.method === "POST") {
       const { chatId, actor, chatTitle } = await request.json();
       if (!chatId || !actor?.id) return Response.json({ error: "invalid_input" }, { status: 400 });
-      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), chatTitle:String(chatTitle ?? "المجموعة"), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };
+      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), chatTitle:String(chatTitle ?? "المجموعة"), creatorId:String(actor.id), creatorName:String(actor.name ?? "لاعب"), status:"lobby", players:{}, stateVersion:0 };
       if (chatTitle) state.chatTitle=String(chatTitle);
       if (state.chatId !== String(chatId)) return Response.json({ error:"room_mismatch" }, { status:409 });
-      if (!state.creatorId) state.creatorId=String(actor.id);
+      // Recover ownership only when the saved creator is no longer in the lobby roster.
+      if (!state.creatorId || !state.players?.[String(state.creatorId)]) {
+        state.creatorId=String(actor.id);
+        state.creatorName=String(actor.name ?? "لاعب");
+      } else if (!state.creatorName) {
+        state.creatorName=String(state.players[state.creatorId]?.name ?? "قائد الغرفة");
+      }
       if (state.status !== "lobby") return Response.json({ error:"game_in_progress" }, { status:409 });
       if (this.env.DB) {
         const active = await this.env.DB.prepare("SELECT p.room_id FROM players p JOIN rooms r ON r.room_id=p.room_id WHERE p.telegram_id=? AND r.status='playing' LIMIT 1").bind(String(actor.id)).first();
@@ -68,7 +74,7 @@ export class RoomCoordinator {
       state.stateVersion++;
       await this.ctx.storage.put("room", state);
       await this.persistJoin(chatId,actor);
-      return Response.json({ ok:true, players:Object.keys(state.players).length, version:state.stateVersion });
+      return Response.json({ ok:true, players:Object.keys(state.players).length, version:state.stateVersion, creatorId:state.creatorId, creatorName:state.creatorName??state.players[state.creatorId]?.name??"قائد الغرفة", isCreator:state.creatorId===String(actor.id) });
     }
     if (url.pathname === "/leave" && request.method === "POST") {
       const { actorId } = await request.json();
@@ -76,7 +82,7 @@ export class RoomCoordinator {
       if (!state || state.status !== "lobby") return Response.json({ error:"not_in_lobby" }, { status:409 });
       delete state.players[String(actorId)];
       if (this.env.DB) await this.env.DB.prepare("DELETE FROM players WHERE room_id=? AND telegram_id=?").bind(state.chatId,String(actorId)).run();
-      if (state.creatorId === String(actorId)) state.creatorId = Object.keys(state.players)[0] ?? null;
+      if (state.creatorId === String(actorId)) { state.creatorId = Object.keys(state.players)[0] ?? null; state.creatorName = state.creatorId ? state.players[state.creatorId]?.name ?? "لاعب" : null; }
       state.stateVersion++;
       await this.ctx.storage.put("room", state);
       return Response.json({ ok:true, players:Object.keys(state.players).length });
@@ -85,7 +91,7 @@ export class RoomCoordinator {
       const { actorId } = await request.json();
       const state = await this.ctx.storage.get("room");
       if (!state || state.status !== "lobby") return Response.json({error:"not_in_lobby"},{status:409});
-      if (!state.creatorId || state.creatorId !== String(actorId)) return Response.json({error:"creator_only"},{status:403});
+      if (!state.creatorId || state.creatorId !== String(actorId)) return Response.json({error:"creator_only",creatorName:state.creatorName??state.players?.[state.creatorId]?.name??"قائد الغرفة"},{status:403});
       const ids = Object.keys(state.players);
       if (ids.length < 5 || ids.length > 10) return Response.json({error:"player_count",count:ids.length},{status:400});
       return Response.json({ok:true,players:ids.map(id=>({id,name:state.players[id].name}))});
@@ -94,7 +100,7 @@ export class RoomCoordinator {
       const { actorId } = await request.json();
       const state = await this.ctx.storage.get("room");
       if (!state || state.status !== "lobby") return Response.json({ error:"not_in_lobby" }, { status:409 });
-      if (!state.creatorId || state.creatorId !== String(actorId)) return Response.json({ error:"creator_only" }, { status:403 });
+      if (!state.creatorId || state.creatorId !== String(actorId)) return Response.json({ error:"creator_only",creatorName:state.creatorName??state.players?.[state.creatorId]?.name??"قائد الغرفة" }, { status:403 });
       const ids = Object.keys(state.players);
       if (ids.length < 5 || ids.length > 10) return Response.json({ error:"player_count", count:ids.length }, { status:400 });
       if (this.env.DB) {
