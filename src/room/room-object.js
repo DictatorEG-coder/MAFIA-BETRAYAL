@@ -38,9 +38,9 @@ export class RoomCoordinator {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/join" && request.method === "POST") {
-      const { chatId, actor } = await request.json();
+      const { chatId, actor, chatTitle } = await request.json();
       if (!chatId || !actor?.id) return Response.json({ error: "invalid_input" }, { status: 400 });
-      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };
+      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), chatTitle:String(chatTitle ?? "المجموعة"), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };\n      if (chatTitle) state.chatTitle=String(chatTitle);
       if (state.chatId !== String(chatId)) return Response.json({ error:"room_mismatch" }, { status:409 });
       if (!state.creatorId) state.creatorId=String(actor.id);
       if (state.status !== "lobby") return Response.json({ error:"game_in_progress" }, { status:409 });
@@ -122,7 +122,7 @@ export class RoomCoordinator {
       const allies=player.faction==="mafia"?state.game.players.filter(p=>p.faction==="mafia"&&p.id!==player.id).map(p=>state.players[p.id]?.name??p.id):[];
       return Response.json({role:player.role,allies,mission:player.mission??null});
     }
-    if (url.pathname === "/result") {
+    if (url.pathname === "/room-info") {\n      const state=await this.ctx.storage.get("room");\n      if(!state) return Response.json({error:"room_not_found"},{status:404});\n      return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null});\n    }\n    if (url.pathname === "/result") {
       const state=await this.ctx.storage.get("room");
       if(!state || state.status!=="ended") return Response.json({error:"game_not_ended"},{status:409});
       return Response.json({winner:state.game.winner,players:state.game.players.map(p=>({id:p.id,role:p.role,faction:p.faction,alive:p.alive}))});
@@ -218,7 +218,7 @@ export class RoomCoordinator {
       try { castVote(state.game,actorId,targetId); await this.ctx.storage.put("room",state); return Response.json({ok:true}); }
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
-    if (url.pathname === "/vote/finish" && request.method === "POST") {
+    if (url.pathname === "/vote/abstain" && request.method === "POST") {\n      const {actorId}=await request.json();\n      const state=await this.ctx.storage.get("room");\n      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});\n      try { castAbstention(state.game,actorId); await this.ctx.storage.put("room",state); return Response.json({ok:true}); }\n      catch(e){ return Response.json({error:e.message},{status:400}); }\n    }\n    if (url.pathname === "/vote/finish" && request.method === "POST") {
       const {actorId}=await request.json();
       const state=await this.ctx.storage.get("room");
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
@@ -285,7 +285,7 @@ export class RoomCoordinator {
     } else if(game.phase==="day") {
       game.phase="nomination";
       state.deadline=Date.now()+30_000;
-      announcement="انتهى النقاش. أمامكم 30 ثانية للترشيح السري: /nominate رقم_المجموعة رقم_اللاعب";
+      announcement="انتهى النقاش. أمامكم 30 ثانية للترشيح السري. أرسلنا لكل لاعب قائمة أسماء في الخاص.";\n      for(const p of alivePlayers()) await sendChoiceMenu(state.players[p.id],"🗳️ اختر لاعبًا لترشيحه سرًا:","nominate",alivePlayers().filter(x=>x.id!==p.id).map(x=>({...x,name:state.players[x.id]?.name??x.id})));
     } else if(game.phase==="nomination") {
       const selected=selectDefendant(game);
       if(selected.defendant) {
@@ -300,7 +300,7 @@ export class RoomCoordinator {
     } else if(game.phase==="defense") {
       game.phase="voting";
       state.deadline=Date.now()+60_000;
-      announcement="انتهى الدفاع. بدأ التصويت السري لمدة 60 ثانية: /vote رقم_المجموعة رقم_اللاعب";
+      announcement="انتهى الدفاع. بدأ التصويت السري لمدة 60 ثانية. أرسلنا أزرار التصويت إلى الخاص.";\n      const accused=game.players.find(p=>p.id===game.defendant);\n      for(const p of alivePlayers()) await sendChoiceMenu(state.players[p.id],"🗳️ صوّت سرًا على المتهم: "+(state.players[accused?.id]?.name??"اللاعب"),"vote",accused?[{...accused,name:state.players[accused.id]?.name??"المتهم"}]:[]);
     } else if(game.phase==="voting") {
       const completed=finishVoting(game);
       state.game=completed.game;
