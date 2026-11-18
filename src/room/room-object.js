@@ -44,7 +44,7 @@ export class RoomCoordinator {
     const winner=game.winner.winner;
     const winnerPlayerId=game.winner.playerId ? String(game.winner.playerId) : null;
     const statements=game.players.map(player=>this.env.DB.prepare(
-      "INSERT OR IGNORE INTO player_game_results (game_id,telegram_id,display_name,role,faction,alive,winner,winner_player_id,played_at) VALUES (?,?,?,?,?,?,?,?,?)"
+      "INSERT OR REPLACE INTO player_game_results (game_id,telegram_id,display_name,role,faction,alive,winner,winner_player_id,played_at) VALUES (?,?,?,?,?,?,?,?,?)"
     ).bind(String(game.id),String(player.id),String(state.players[player.id]?.name??player.id),String(player.role),String(player.faction),player.alive?1:0,String(winner),winnerPlayerId,playedAt));
     if(statements.length) await this.env.DB.batch(statements);
   }
@@ -224,6 +224,7 @@ export class RoomCoordinator {
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if (!state?.game || state.status !== "playing") return Response.json({error:"no_active_game"},{status:409});
       const result = resolveNight(state.game);
+      appendPublicEvent(state.game,{phase:state.game.phase,text:result.deaths.length?"انتهى الليل وسقطت ضحية.":"مرّت الليلة دون ضحايا."});
       state.stateVersion++;
       if(state.game.phase!=="ended") state.deadline=Date.now()+120_000;
       if(state.game.phase==="ended") {
