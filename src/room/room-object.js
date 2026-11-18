@@ -4,6 +4,7 @@ import { nominate, selectDefendant } from "../game/day.js";
 import { castVote, castAbstention, finishVoting, avenge } from "../game/engine.js";
 import { sendMessage } from "../telegram/api.js";
 import { gamblerMissionText } from "../game/gambler.js";
+import { chooseNightEvent, appendPublicEvent, getPublicHistory, getGameStats } from "../game/experience.js";
 
 export class RoomCoordinator {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
@@ -152,6 +153,24 @@ export class RoomCoordinator {
       const state=await this.ctx.storage.get("room");
       if(!state) return Response.json({error:"room_not_found"},{status:404});
       return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null,defendant:state.game?.defendant??null});
+    }
+    if (url.pathname === "/history") {
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game) return Response.json({error:"no_game"},{status:404});
+      return Response.json({history:getPublicHistory(state.game),stats:getGameStats(state.game),phase:state.game.phase,round:state.game.round});
+    }
+    if (url.pathname === "/spectate" && request.method === "POST") {
+      const {actorId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game) return Response.json({error:"no_game"},{status:404});
+      const player=state.game.players.find(item=>item.id===String(actorId));
+      if(!player || player.alive) return Response.json({error:"spectator_only_after_elimination"},{status:403});
+      return Response.json({ok:true,history:getPublicHistory(state.game),stats:getGameStats(state.game),phase:state.game.phase,round:state.game.round});
+    }
+    if (url.pathname === "/stats") {
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game) return Response.json({error:"no_game"},{status:404});
+      return Response.json(getGameStats(state.game));
     }
     if (url.pathname === "/result") {
       const state=await this.ctx.storage.get("room");
@@ -319,6 +338,7 @@ export class RoomCoordinator {
         if(fallen) await sendChoices(fallen,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:","avenge",alive().map(player=>({...player,name:name(player.id)})));
       }
       privateReports=[
+        ...(result.actionReports??[]),
         ...(result.investigations??[]).map(item=>({id:item.actorId,text:"نتيجة التحقيق في "+name(item.targetId)+": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه")})),
         ...(result.monitoring??[]).map(item=>({id:item.actorId,text:"نتيجة المراقبة في "+name(item.targetId)+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له.")}))
       ];
@@ -346,9 +366,11 @@ export class RoomCoordinator {
         const role=fallen?.role;
         return "🩸 عُثر على جثة "+name(id)+"...\n"+(deathScenes[role]??"ترك الليل خلفه سرًا جديدًا.")+"\n🎭 هويته الحقيقية: "+(roleNames[role]??"مجهولة")+".";
       });
+      const nightEvent=chooseNightEvent();
       announcement=result.deaths.length
         ? "🌑 انقشع الظلام، لكن المدينة لم تستيقظ بسلام...\n"+deathLines[Math.floor(Math.random()*deathLines.length)]+"\n\n"+revealDeaths.join("\n")
         : "🌘 مرّت الليلة بلا جثث... لا أحد يعرف إن كان الطبيب قد أنقذ ضحية، أم أن المافيا أخطأت هدفها. الصمت هذه المرة أكثر رعبًا.";
+      announcement+="\\n\\n🕵️ "+nightEvent.title+": "+nightEvent.text;
       if(game.phase==="ended") {
         state.status="ended";
         announcement+="\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
@@ -431,6 +453,7 @@ export class RoomCoordinator {
       return;
     }
 
+    appendPublicEvent(game,{phase:game.phase,text:announcement});
     game.stateVersion=(game.stateVersion??0)+1;
     state.stateVersion=(state.stateVersion??0)+1;
     if(state.status==="ended") {
