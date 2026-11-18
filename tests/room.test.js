@@ -56,14 +56,16 @@ test("only the room creator can prepare or start a game",async()=>{
  assert.equal(start.status,403);
 });
 
-test("room creator can reopen an ended room without losing its roster",async()=>{
+test("room creator reopens an ended room with an empty roster requiring fresh joins",async()=>{
  const room=makeRoom();
  await room.ctx.storage.put("room",{chatId:"-100",creatorId:"1",status:"ended",players:{"1":{id:"1",name:"P1"}},game:{phase:"ended"},stateVersion:9});
  const response=await call(room,"/newgame",{actorId:"1"});
  assert.equal(response.status,200);
  const status=await (await call(room,"/status")).json();
  assert.equal(status.status,"lobby");
- assert.equal(status.players,1);
+ assert.equal(status.players,0);
+ const roster=await (await call(room,"/players")).json();
+ assert.equal(roster.players.length,0);
 });
 
 test("roles stay hidden from the room until the game ends and private lookup is self-only",async()=>{
