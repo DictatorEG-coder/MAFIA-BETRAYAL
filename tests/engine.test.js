@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createGame, castVote, castAbstention, avenge, finishVoting } from "../src/game/engine.js";
+import { getWinner } from "../src/game/win-conditions.js";
 
 test("game initializes with private roles and stable player state", () => {
   const game = createGame(["1","2","3","4","5"], () => 0.1);
@@ -75,4 +76,25 @@ test("avenger retaliation does not erase an already declared winner",()=>{
  ]};
  avenge(game,"a","m");
  assert.equal(game.winner.winner,"gambler");
+});
+
+
+test("city wins immediately when every hostile faction has been eliminated",()=>{
+ const players=[
+  {id:"c",role:"citizen",faction:"city",alive:true},
+  {id:"d",role:"doctor",faction:"city",alive:true},
+  {id:"s",role:"survivor",faction:"independent",alive:true,hostile:false},
+  {id:"m",role:"boss",faction:"mafia",alive:false}
+ ];
+ assert.deepEqual(getWinner(players,1),{winner:"city",reason:"all_threats_removed"});
+});
+
+test("survivor wins after four rounds only while the city has not already eliminated every threat",()=>{
+ const players=[
+  {id:"c",role:"citizen",faction:"city",alive:true},
+  {id:"d",role:"doctor",faction:"city",alive:true},
+  {id:"m",role:"boss",faction:"mafia",alive:true},
+  {id:"s",role:"survivor",faction:"independent",alive:true,hostile:false}
+ ];
+ assert.deepEqual(getWinner(players,4),{winner:"survivor",reason:"survived_four_rounds"});
 });

@@ -225,3 +225,38 @@ test("non-creator prepare response identifies the room leader",async()=>{
  assert.equal(data.error,"creator_only");
  assert.equal(data.creatorName,"Room Leader");
 });
+
+
+test("automatic defense phase lasts ninety seconds and names the accused",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{
+  chatId:"-100",creatorId:"1",status:"playing",
+  players:{"1":{id:"1",name:"Player 1"},"2":{id:"2",name:"Player 2"}},
+  stateVersion:1,deadline:Date.now()-1,
+  game:{phase:"nomination",round:1,stateVersion:1,nominations:{"1":"2"},players:[
+   {id:"1",role:"citizen",faction:"city",alive:true},
+   {id:"2",role:"boss",faction:"mafia",alive:true}
+  ]}
+ });
+ await room.alarm();
+ const state=await room.ctx.storage.get("room");
+ assert.equal(state.game.phase,"defense");
+ assert.ok(state.deadline-Date.now()>89_000);
+ assert.ok(state.deadline-Date.now()<=90_000);
+});
+
+test("manual defendant selection also schedules a ninety-second defense",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{
+  chatId:"-100",creatorId:"1",status:"playing",players:{"1":{id:"1",name:"Player 1"},"2":{id:"2",name:"Player 2"}},
+  stateVersion:1,game:{phase:"nomination",round:1,nominations:{"1":"2"},players:[
+   {id:"1",role:"citizen",faction:"city",alive:true},
+   {id:"2",role:"boss",faction:"mafia",alive:true}
+  ]}
+ });
+ const response=await call(room,"/defendant",{actorId:"1"});
+ assert.equal(response.status,200);
+ const state=await room.ctx.storage.get("room");
+ assert.ok(state.deadline-Date.now()>89_000);
+ assert.ok(state.deadline-Date.now()<=90_000);
+});
