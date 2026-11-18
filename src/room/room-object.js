@@ -167,7 +167,7 @@ export class RoomCoordinator {
     if (url.pathname === "/avenge" && request.method === "POST") {
       const {actorId,targetId}=await request.json();
       const state=await this.ctx.storage.get("room");
-      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});
+      if(!state?.game || !["playing","ended"].includes(state.status)) return Response.json({error:"no_active_game"},{status:409});
       try {
         const result=avenge(state.game,actorId,targetId);
         if(state.game.phase==="ended") state.status="ended";
@@ -322,7 +322,7 @@ export class RoomCoordinator {
       } else {
         game.phase="night";
         state.deadline=Date.now()+90_000;
-        announcement="انتهت مهلة الترشيح دون ترشيحات. لم يُحدد متهم، ولذلك لن يحدث تصويت هذه الجولة. يبدأ الليل التالي.";
+        announcement="انتهت مهلة الترشيح دون ترشيحات. لم يُحدد متهم، ولذلك لن يحدث تصويت هذه الجولة. يبدأ الليل التالي لمدة 90 ثانية.";
       }
     } else if(game.phase==="defense") {
       game.phase="voting";
@@ -370,7 +370,7 @@ export class RoomCoordinator {
         announcement=(completed.result.eliminated?"انتهى التصويت وتم إقصاء "+name(completed.result.eliminated)+".":"انتهى التصويت دون إقصاء.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
       } else {
         state.deadline=Date.now()+90_000;
-        announcement=(completed.result.eliminated?"تم إقصاء "+name(completed.result.eliminated)+".":"لم يُقصَ أحد.")+abstainedText+skippedText+"\n🌙 يبدأ الليل التالي.";
+        announcement=(completed.result.eliminated?"تم إقصاء "+name(completed.result.eliminated)+".":"لم يُقصَ أحد.")+abstainedText+skippedText+"\n🌙 يبدأ الليل التالي لمدة 90 ثانية.";
       }
     } else {
       return;
