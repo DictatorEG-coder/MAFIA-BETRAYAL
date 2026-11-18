@@ -370,7 +370,7 @@ export class RoomCoordinator {
       announcement=result.deaths.length
         ? "🌑 انقشع الظلام، لكن المدينة لم تستيقظ بسلام...\n"+deathLines[Math.floor(Math.random()*deathLines.length)]+"\n\n"+revealDeaths.join("\n")
         : "🌘 مرّت الليلة بلا جثث... لا أحد يعرف إن كان الطبيب قد أنقذ ضحية، أم أن المافيا أخطأت هدفها. الصمت هذه المرة أكثر رعبًا.";
-      announcement+="\\n\\n🕵️ "+nightEvent.title+": "+nightEvent.text;
+      announcement+="\n\n🕵️ "+nightEvent.title+": "+nightEvent.text;
       if(game.phase==="ended") {
         state.status="ended";
         announcement+="\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
