@@ -63,12 +63,12 @@ async function sendOwnerPanel(env,chatId) {
  const [userCount,groupCount,users,groups]=await Promise.all([
   env.DB.prepare("SELECT COUNT(*) AS total FROM bot_users").first(),
   env.DB.prepare("SELECT COUNT(*) AS total FROM bot_groups WHERE status='active'").first(),
-  env.DB.prepare("SELECT user_id,display_name,username,last_seen_at FROM bot_users ORDER BY last_seen_at DESC LIMIT 20").all(),
-  env.DB.prepare("SELECT chat_id,title,chat_type,status,added_at,last_seen_at FROM bot_groups ORDER BY last_seen_at DESC LIMIT 20").all()
+  env.DB.prepare("SELECT user_id,display_name,username,last_seen_at FROM bot_users ORDER BY last_seen_at DESC LIMIT 10").all(),
+  env.DB.prepare("SELECT chat_id,title,chat_type,status,added_at,last_seen_at FROM bot_groups ORDER BY last_seen_at DESC LIMIT 10").all()
  ]);
  const userLines=(users.results??[]).map((u,i)=>(i+1)+". "+u.display_name+" — "+u.user_id+(u.username?" (@"+u.username+")":""));
  const groupLines=(groups.results??[]).map((g,i)=>(i+1)+". "+g.title+" — "+g.chat_id+" ["+(g.status==="active"?"نشطة":"غادرها البوت")+"]");
- const message="🛡️ لوحة مالك MAFIA: BETRAYAL\n\n👥 المستخدمون المسجلون: "+(userCount?.total??0)+"\n🏘️ المجموعات النشطة: "+(groupCount?.total??0)+"\n\n👤 آخر 20 مستخدمًا تفاعلوا مع البوت:\n"+(userLines.join("\n")||"لا يوجد مستخدمون مسجلون.")+"\n\n🏘️ آخر 20 مجموعة أُضيف إليها البوت أو تفاعل معها:\n"+(groupLines.join("\n")||"لا توجد مجموعات مسجلة.")+"\n\nملاحظة: التسجيل يبدأ من تفعيل هذا التحديث؛ المجموعات القديمة تُسجّل عند أول تفاعل جديد.";
+ const message="🛡️ لوحة مالك MAFIA: BETRAYAL\n\n👥 المستخدمون المسجلون: "+(userCount?.total??0)+"\n🏘️ المجموعات النشطة: "+(groupCount?.total??0)+"\n\n👤 آخر 10 مستخدمين تفاعلوا مع البوت:\n"+(userLines.join("\n")||"لا يوجد مستخدمون مسجلون.")+"\n\n🏘️ آخر 10 مجموعات أُضيف إليها البوت أو تفاعل معها:\n"+(groupLines.join("\n")||"لا توجد مجموعات مسجلة.")+"\n\nملاحظة: التسجيل يبدأ من تفعيل هذا التحديث؛ المجموعات القديمة تُسجّل عند أول تفاعل جديد.";
  await sendMessage(env,chatId,message);
 }
 const OWNER_REACTIONS=new Set(["❤️","🔥","😂","😍","👏","👍","🤝","⚡","🎉","😮","😢","🙏","💯","🥳","💔"]);
