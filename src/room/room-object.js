@@ -1,7 +1,7 @@
 import { createGame } from "../game/engine.js";
 import { resolveNight, submitNightAction } from "../game/night.js";
 import { nominate, selectDefendant } from "../game/day.js";
-import { castVote, finishVoting, avenge } from "../game/engine.js";
+import { castVote, castAbstention, finishVoting, avenge } from "../game/engine.js";
 import { sendMessage } from "../telegram/api.js";
 import { gamblerMissionText } from "../game/gambler.js";
 
