@@ -7,7 +7,9 @@ const HELP = [
  "• ليلًا، تنفّذ الأدوار الخاصة أفعالها من الأزرار.",
  "• نهارًا، تناقشون ثم ترشّحون لاعبًا سرًا من أزرار الخاص.",
  "• بعد الدفاع، صوّتوا على المتهم أو اختاروا الامتناع عن التصويت.",
- "• لا تكشف دورك. يفوز من يحقق هدف فريقه أو مهمته."
+ "• لا تكشف دورك. يفوز من يحقق هدف فريقه أو مهمته.",
+ "• /history لسجل الأحداث، /stats لإحصائيات المباراة، /profile لملفك وإنجازاتك.",
+ "• بعد إقصائك استخدم /spectate لمتابعة الأحداث العامة دون التدخل."
 ].join("\n");
 
 const GAMBLER_MISSION_TEXTS={survive:"ابقَ حيًا حتى نهاية الجولة الحالية.",nominate:"رشّح اللاعب الذي سيصبح المتهم.",vote:"صوّت للاعب الذي سيتم إقصاؤه."};
@@ -186,6 +188,14 @@ export async function routeUpdate(update,env) {
  if(command==="/newgame") {
   const response=await roomCall(env,chatId,"/newgame",{actorId:actor.id}); const data=await response.json();
   await sendMessage(env,chatId,response.ok?"🕯️ انتهت آثار الجولة السابقة. فُتحت غرفة جديدة، وصُفّرت قائمة اللاعبين. على الجميع الانضمام من جديد عبر «أنا» أو زر الانضمام؛ لن يُحتسب أحد تلقائيًا.":"تعذر فتح جولة جديدة: "+(data.error??"خطأ")); return;
+ }
+ if(command==="/profile") {
+  const response=await roomCall(env,chatId,"/profile",{actorId:actor.id});
+  const data=await response.json();
+  if(!response.ok) { await sendMessage(env,chatId,"تعذر تحميل ملف اللاعب: "+(data.error??"خطأ")); return; }
+  const recent=(data.recent??[]).map(item=>"• "+(ROLE_NAMES[item.role]??item.role)+" — "+(item.winner==="city"?"فوز المدينة":item.winner==="mafia"?"فوز المافيا":item.winner==="survivor"?"فوز الناجي":item.winner==="gambler"?"فوز المقامر":item.winner??"انتهت"));
+  await sendMessage(env,chatId,"👤 ملف اللاعب: "+actor.name+"\nالمباريات: "+data.games+"\nالانتصارات: "+data.wins+"\nالخسائر: "+data.losses+"\nنسبة الفوز: "+data.winRate+"%\nانتصارات المافيا: "+data.mafiaWins+"\nانتصارات المدينة: "+data.cityWins+"\n\n🏅 ألقابك: "+(data.titles?.join("، ")||"لم تحصل على لقب بعد.")+"\n\nآخر المباريات:\n"+(recent.join("\n")||"لا توجد مباريات مسجلة بعد."));
+  return;
  }
  if(command==="/history" || command==="/spectate" || command==="/stats") {
   const roomId=inPrivate?parts[1]:chatId;
