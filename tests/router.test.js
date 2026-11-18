@@ -108,3 +108,18 @@ test("private abstention button is routed to the correct room",async()=>{
   assert.deepEqual(calls,[{path:"/vote/abstain",body:{actorId:"111"}}]);
  } finally {globalThis.fetch=previous;}
 });
+
+test("start request by a non-creator explains who can start the game",async()=>{
+ const previous=globalThis.fetch; const sent=[];
+ const stub={async fetch(url){
+  if(new URL(url).pathname==="/prepare") return Response.json({error:"creator_only",creatorName:"Room Leader"},{status:403});
+  throw new Error("Unexpected room request");
+ }};
+ globalThis.fetch=async(url,options)=>{sent.push(JSON.parse(options.body));return Response.json({ok:true,result:{message_id:1}});};
+ try {
+  const env={TELEGRAM_BOT_TOKEN:"test",ROOMS:{idFromName:id=>id,get:()=>stub}};
+  await routeUpdate({message:{chat:{id:-10077,type:"supergroup"},from:{id:222,first_name:"Other Player"},text:"ابدأ"}},env);
+  assert.match(sent[0].text,/بدء اللعبة متاح فقط لمن أنشأ الغرفة/);
+  assert.match(sent[0].text,/Room Leader/);
+ } finally {globalThis.fetch=previous;}
+});
