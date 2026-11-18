@@ -93,3 +93,21 @@ test("durable alarm advances the day into nomination after its deadline",async()
  assert.equal(state.game.phase,"nomination");
  assert.ok(state.deadline>Date.now());
 });
+
+test("abstention endpoint records an explicit skip during voting",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{chatId:"-100",creatorId:"1",status:"playing",players:{"1":{id:"1",name:"P1"}},game:{phase:"voting",players:[{id:"1",alive:true}],votes:{},abstentions:{}},stateVersion:1});
+ const response=await call(room,"/vote/abstain",{actorId:"1"});
+ assert.equal(response.status,200);
+ const state=await room.ctx.storage.get("room");
+ assert.equal(state.game.abstentions["1"],true);
+});
+
+test("a round with no nominations advances the round only once",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{chatId:"-100",creatorId:"1",status:"playing",players:{},stateVersion:1,deadline:Date.now()-1,game:{phase:"nomination",round:1,stateVersion:1,players:[],nominations:{}}});
+ await room.alarm();
+ const state=await room.ctx.storage.get("room");
+ assert.equal(state.game.phase,"night");
+ assert.equal(state.game.round,2);
+});
