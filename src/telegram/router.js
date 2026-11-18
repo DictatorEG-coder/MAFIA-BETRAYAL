@@ -33,7 +33,7 @@ async function announceResult(env,chatId) {
  const response=await roomCall(env,chatId,"/result");
  if(!response.ok) return;
  const data=await response.json();
- const names={city:"المدينة",mafia:"المافيا",survivor:"الناجي"};
+ const names={city:"المدينة",mafia:"المافيا",survivor:"الناجي",gambler:"المقامر"};
  const roles=data.players.map(p=>p.id+" — "+(ROLE_NAMES[p.role]??p.role)+(p.alive?" (باقٍ)":" (مقصى)"));
  await sendMessage(env,chatId,"🏁 انتهت الجولة. الفائز: "+(names[data.winner?.winner]??data.winner?.winner??"غير محدد")+"\nكشف الأدوار:\n"+roles.join("\n"));
 }
