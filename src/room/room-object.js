@@ -98,6 +98,27 @@ export class RoomCoordinator {
       await this.persistGameStart(state.chatId,game);
       return Response.json({ ok:true, gameId:game.id, players:ids.map(id=>({id,name:state.players[id].name,role:game.players.find(p=>p.id===id).role,mission:game.players.find(p=>p.id===id).mission??null})), round:game.round });
     }
+    if (url.pathname === "/cancel" && request.method === "POST") {
+      const {actorId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state || state.status!=="playing" || !state.game) return Response.json({error:"no_active_game"},{status:409});
+      if(state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
+      state.status="ended";
+      state.game.phase="ended";
+      state.game.winner={winner:"cancelled"};
+      state.game.endedAt=Date.now();
+      state.deadline=null;
+      state.voteGrace=false;
+      state.stateVersion=(state.stateVersion??0)+1;
+      state.game.stateVersion=(state.game.stateVersion??0)+1;
+      await this.ctx.storage.deleteAlarm?.();
+      await this.ctx.storage.put("room",state);
+      if(this.env.DB) {
+        await this.env.DB.prepare("UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?").bind(new Date(state.game.endedAt).toISOString(),JSON.stringify(state.game.winner),state.game.id).run();
+        await this.env.DB.prepare("UPDATE rooms SET status='ended',updated_at=? WHERE room_id=?").bind(new Date().toISOString(),state.chatId).run();
+      }
+      return Response.json({ok:true});
+    }
     if (url.pathname === "/newgame" && request.method === "POST") {
       const {actorId}=await request.json();
       const state=await this.ctx.storage.get("room");
