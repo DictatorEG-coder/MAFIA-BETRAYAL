@@ -1,4 +1,5 @@
 import { getWinner } from "./win-conditions.js";
+import { getNightActionReports } from "./experience.js";
 const NIGHT_PERMISSIONS = { detective:["investigate"], doctor:["protect"], guard:["protect"], boss:["attack"], killer:["attack"], spy:["monitor"] };
 export function submitNightAction(game, actorId, action, targetId) {
  if(game.phase!=="night") throw new Error("Night actions are closed");
@@ -35,8 +36,9 @@ export function resolveNight(game) {
   const target=game.players.find(p=>p.id===attackTarget&&p.alive);
   if(target){if(target.armor>0) target.armor--; else {target.alive=false;target.health=0;deaths.push(attackTarget);}}
  }
+ const actionReports=getNightActionReports(game,{attackTarget,deaths});
  game.actions={}; game.winner=getWinner(game.players,game.round);
  if(game.winner){game.phase="ended";game.endedAt=Date.now();} else game.phase="day";
  game.stateVersion++;
- return {game,deaths,investigations,monitoring,attackTarget};
+ return {game,deaths,investigations,monitoring,attackTarget,actionReports};
 }

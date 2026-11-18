@@ -169,3 +169,38 @@ test("voting gives missing players a ten-second grace period then skips them",as
   assert.ok(sent.some(item=>String(item.chat_id)==="-100"&&/لم يصوّت: Player 1، Player 2/.test(item.text)));
  } finally { globalThis.fetch=previous; }
 });
+
+
+test("spectator mode is available only to eliminated players and exposes public history only",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{
+  chatId:"-100",creatorId:"1",status:"playing",players:{"1":{id:"1",name:"P1"}},stateVersion:1,
+  game:{phase:"day",round:2,history:[{round:1,phase:"night",text:"مرّت الليلة."}],players:[
+   {id:"1",role:"citizen",faction:"city",alive:true},
+   {id:"2",role:"boss",faction:"mafia",alive:false}
+  ]}
+ });
+ const alive=await call(room,"/spectate",{actorId:"1"});
+ assert.equal(alive.status,403);
+ const dead=await call(room,"/spectate",{actorId:"2"});
+ assert.equal(dead.status,200);
+ const data=await dead.json();
+ assert.equal(data.history.length,1);
+ assert.equal(data.history[0].text,"مرّت الليلة.");
+ assert.equal(JSON.stringify(data).includes("boss"),false);
+});
+
+test("public history and match stats can be read without revealing roles",async()=>{
+ const room=makeRoom();
+ await room.ctx.storage.put("room",{
+  chatId:"-100",status:"playing",players:{},game:{phase:"day",round:1,history:[{round:1,phase:"day",text:"بدأ النهار."}],votes:{},abstentions:{},players:[
+   {id:"1",role:"citizen",alive:true},{id:"2",role:"boss",alive:false}
+  ]}
+ });
+ const history=await (await call(room,"/history")).json();
+ assert.equal(history.history[0].text,"بدأ النهار.");
+ assert.equal(JSON.stringify(history).includes("boss"),false);
+ const stats=await (await call(room,"/stats")).json();
+ assert.equal(stats.players,2);
+ assert.equal(stats.survivors,1);
+});

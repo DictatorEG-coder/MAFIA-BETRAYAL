@@ -7,7 +7,9 @@ const HELP = [
  "• ليلًا، تنفّذ الأدوار الخاصة أفعالها من الأزرار.",
  "• نهارًا، تناقشون ثم ترشّحون لاعبًا سرًا من أزرار الخاص.",
  "• بعد الدفاع، صوّتوا على المتهم أو اختاروا الامتناع عن التصويت.",
- "• لا تكشف دورك. يفوز من يحقق هدف فريقه أو مهمته."
+ "• لا تكشف دورك. يفوز من يحقق هدف فريقه أو مهمته.",
+ "• /history لسجل الأحداث، /stats لإحصائيات المباراة، /profile لملفك وإنجازاتك.",
+ "• بعد إقصائك استخدم /spectate لمتابعة الأحداث العامة دون التدخل."
 ].join("\n");
 
 const GAMBLER_MISSION_TEXTS={survive:"ابقَ حيًا حتى نهاية الجولة الحالية.",nominate:"رشّح اللاعب الذي سيصبح المتهم.",vote:"صوّت للاعب الذي سيتم إقصاؤه."};
@@ -187,6 +189,33 @@ export async function routeUpdate(update,env) {
   const response=await roomCall(env,chatId,"/newgame",{actorId:actor.id}); const data=await response.json();
   await sendMessage(env,chatId,response.ok?"🕯️ انتهت آثار الجولة السابقة. فُتحت غرفة جديدة، وصُفّرت قائمة اللاعبين. على الجميع الانضمام من جديد عبر «أنا» أو زر الانضمام؛ لن يُحتسب أحد تلقائيًا.":"تعذر فتح جولة جديدة: "+(data.error??"خطأ")); return;
  }
+ if(command==="/profile") {
+  const response=await roomCall(env,chatId,"/profile",{actorId:actor.id});
+  const data=await response.json();
+  if(!response.ok) { await sendMessage(env,chatId,"تعذر تحميل ملف اللاعب: "+(data.error??"خطأ")); return; }
+  const recent=(data.recent??[]).map(item=>"• "+(ROLE_NAMES[item.role]??item.role)+" — "+(item.winner==="city"?"فوز المدينة":item.winner==="mafia"?"فوز المافيا":item.winner==="survivor"?"فوز الناجي":item.winner==="gambler"?"فوز المقامر":item.winner??"انتهت"));
+  await sendMessage(env,chatId,"👤 ملف اللاعب: "+actor.name+"\nالمباريات: "+data.games+"\nالانتصارات: "+data.wins+"\nالخسائر: "+data.losses+"\nنسبة الفوز: "+data.winRate+"%\nانتصارات المافيا: "+data.mafiaWins+"\nانتصارات المدينة: "+data.cityWins+"\n\n🏅 ألقابك: "+(data.titles?.join("، ")||"لم تحصل على لقب بعد.")+"\n\nآخر المباريات:\n"+(recent.join("\n")||"لا توجد مباريات مسجلة بعد."));
+  return;
+ }
+ if(command==="/history" || command==="/spectate" || command==="/stats") {
+  const roomId=inPrivate?parts[1]:chatId;
+  if(!roomId || !/^-?[0-9]+$/.test(roomId)) { await sendMessage(env,chatId,"استخدم الأمر داخل مجموعة المباراة، أو أرسل رقم المجموعة بعد الأمر في الخاص."); return; }
+  const path=command==="/spectate"?"/spectate":command==="/stats"?"/stats":"/history";
+  const response=await roomCall(env,roomId,path,command==="/spectate"?{actorId:actor.id}:null);
+  const data=await response.json();
+  if(!response.ok) {
+   await sendMessage(env,chatId,data.error==="spectator_only_after_elimination"?"وضع المشاهد متاح بعد إقصائك فقط.": "لا يمكن عرض البيانات: "+(data.error??"خطأ"));
+   return;
+  }
+  if(command==="/stats") {
+   await sendMessage(env,chatId,"📊 إحصائيات المباراة الحالية\nالجولات: "+data.rounds+"\nاللاعبون: "+data.players+"\nالناجون: "+data.survivors+"\nالمقصون: "+data.eliminated+"\nالأحداث المسجلة: "+data.events);
+   return;
+  }
+  const history=data.history??[];
+  const lines=history.slice(-12).map(item=>"الجولة "+item.round+" — "+item.text);
+  await sendMessage(env,chatId,(command==="/spectate"?"👁️ وضع المشاهد — متابعة الأحداث العامة فقط.\n\n":"📜 سجل أحداث المباراة\n\n")+(lines.length?lines.join("\n\n"):"لم تُسجل أحداث بعد."));
+  return;
+ }
  if(command==="/players") {
   const players=await roster(env,chatId);
   await sendMessage(env,chatId,players.length?players.map(p=>p.slot+". "+p.name+(p.alive?"":" — مقصى")).join("\n"):"لا توجد غرفة بعد."); return;
@@ -225,6 +254,9 @@ export async function routeUpdate(update,env) {
   for(const id of data.deaths??[]) {
    const fallen=players.find(p=>p.id===id&&p.role==="avenger");
    if(fallen) await sendMessage(env,fallen.id,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:",{reply_markup:{inline_keyboard:players.filter(p=>p.alive).map(p=>[{text:p.name,callback_data:"mb:act:"+chatId+":avenge:"+p.id}])}});
+  }
+  for(const item of data.actionReports??[]) {
+   await sendMessage(env,item.actorId,item.text);
   }
   for(const item of data.investigations??[]) {
    const target=players.find(p=>p.id===item.targetId);

@@ -4,6 +4,7 @@ import { nominate, selectDefendant } from "../game/day.js";
 import { castVote, castAbstention, finishVoting, avenge } from "../game/engine.js";
 import { sendMessage } from "../telegram/api.js";
 import { gamblerMissionText } from "../game/gambler.js";
+import { chooseNightEvent, appendPublicEvent, getPublicHistory, getGameStats } from "../game/experience.js";
 
 export class RoomCoordinator {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
@@ -33,6 +34,19 @@ export class RoomCoordinator {
     await this.env.DB.prepare(
       "INSERT INTO games (game_id,room_id,status,started_at) VALUES (?,?,?,?)"
     ).bind(game.id,String(roomId),"playing",now).run();
+  }
+
+
+  async persistGameResults(state) {
+    if (!this.env.DB || !state?.game?.winner || state.game.winner.winner === "cancelled") return;
+    const game=state.game;
+    const playedAt=new Date(game.endedAt ?? Date.now()).toISOString();
+    const winner=game.winner.winner;
+    const winnerPlayerId=game.winner.playerId ? String(game.winner.playerId) : null;
+    const statements=game.players.map(player=>this.env.DB.prepare(
+      "INSERT OR REPLACE INTO player_game_results (game_id,telegram_id,display_name,role,faction,alive,winner,winner_player_id,played_at) VALUES (?,?,?,?,?,?,?,?,?)"
+    ).bind(String(game.id),String(player.id),String(state.players[player.id]?.name??player.id),String(player.role),String(player.faction),player.alive?1:0,String(winner),winnerPlayerId,playedAt));
+    if(statements.length) await this.env.DB.batch(statements);
   }
 
   async fetch(request) {
@@ -153,6 +167,41 @@ export class RoomCoordinator {
       if(!state) return Response.json({error:"room_not_found"},{status:404});
       return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null,defendant:state.game?.defendant??null});
     }
+    if (url.pathname === "/profile" && request.method === "POST") {
+      const {actorId}=await request.json();
+      if(!this.env.DB) return Response.json({error:"stats_unavailable"},{status:503});
+      const rows=await this.env.DB.prepare("SELECT display_name,role,faction,alive,winner,winner_player_id,played_at FROM player_game_results WHERE telegram_id=? ORDER BY played_at DESC LIMIT 500").bind(String(actorId)).all();
+      const games=rows.results??[];
+      const wins=games.filter(row=>row.winner===row.faction||(row.winner==="survivor"&&row.role==="survivor")||(row.winner==="gambler"&&row.winner_player_id===String(actorId))).length;
+      const mafiaWins=games.filter(row=>row.faction==="mafia"&&row.winner==="mafia").length;
+      const cityWins=games.filter(row=>row.faction==="city"&&row.winner==="city").length;
+      const survived=games.filter(row=>row.alive===1).length;
+      const titles=[];
+      if(games.length>=1) titles.push("🎭 لاعب متمرّس");
+      if(wins>=5) titles.push("🏆 صانع الانتصارات");
+      if(mafiaWins>=3) titles.push("🕶️ عقل المافيا");
+      if(cityWins>=3) titles.push("🛡️ حامي المدينة");
+      if(survived>=5) titles.push("🌘 الناجي الصلب");
+      return Response.json({games:games.length,wins,losses:games.length-wins,winRate:games.length?Math.round(wins*100/games.length):0,mafiaWins,cityWins,survived,titles,recent:games.slice(0,5).map(row=>({role:row.role,winner:row.winner,playedAt:row.played_at}))});
+    }
+    if (url.pathname === "/history") {
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game) return Response.json({error:"no_game"},{status:404});
+      return Response.json({history:getPublicHistory(state.game),stats:getGameStats(state.game),phase:state.game.phase,round:state.game.round});
+    }
+    if (url.pathname === "/spectate" && request.method === "POST") {
+      const {actorId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game) return Response.json({error:"no_game"},{status:404});
+      const player=state.game.players.find(item=>item.id===String(actorId));
+      if(!player || player.alive) return Response.json({error:"spectator_only_after_elimination"},{status:403});
+      return Response.json({ok:true,history:getPublicHistory(state.game),stats:getGameStats(state.game),phase:state.game.phase,round:state.game.round});
+    }
+    if (url.pathname === "/stats") {
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game) return Response.json({error:"no_game"},{status:404});
+      return Response.json(getGameStats(state.game));
+    }
     if (url.pathname === "/result") {
       const state=await this.ctx.storage.get("room");
       if(!state || state.status!=="ended") return Response.json({error:"game_not_ended"},{status:409});
@@ -175,10 +224,12 @@ export class RoomCoordinator {
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if (!state?.game || state.status !== "playing") return Response.json({error:"no_active_game"},{status:409});
       const result = resolveNight(state.game);
+      appendPublicEvent(state.game,{phase:state.game.phase,text:result.deaths.length?"انتهى الليل وسقطت ضحية.":"مرّت الليلة دون ضحايا."});
       state.stateVersion++;
       if(state.game.phase!=="ended") state.deadline=Date.now()+120_000;
       if(state.game.phase==="ended") {
         state.status="ended";
+        await this.persistGameResults(state);
         if(this.env.DB) {
           await this.env.DB.prepare("UPDATE games SET status=?,ended_at=?,result_json=? WHERE game_id=?").bind("ended",new Date(state.game.endedAt).toISOString(),JSON.stringify(state.game.winner),state.game.id).run();
           await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?").bind("ended",new Date().toISOString(),state.chatId).run();
@@ -187,7 +238,7 @@ export class RoomCoordinator {
       await this.ctx.storage.put("room",state);
       if(state.game.phase!=="ended") await this.ctx.storage.setAlarm(state.deadline);
       else await this.ctx.storage.deleteAlarm?.();
-      return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,monitoring:result.monitoring,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
+      return Response.json({ok:true,deaths:result.deaths,investigations:result.investigations,monitoring:result.monitoring,actionReports:result.actionReports,phase:state.game.phase,round:state.game.round,winner:state.game.winner});
     }
     if (url.pathname === "/avenge" && request.method === "POST") {
       const {actorId,targetId}=await request.json();
@@ -198,6 +249,7 @@ export class RoomCoordinator {
         if(state.game.phase==="ended") state.status="ended";
         await this.ctx.storage.put("room",state);
         if(state.game.phase==="ended") {
+          await this.persistGameResults(state);
           await this.ctx.storage.deleteAlarm?.();
           if(this.env.DB) {
             await this.env.DB.prepare("UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?")
@@ -270,6 +322,7 @@ export class RoomCoordinator {
         if(game.phase==="ended") await this.ctx.storage.deleteAlarm?.();
         else await this.ctx.storage.setAlarm(state.deadline);
         if(game.phase==="ended") {
+          await this.persistGameResults(state);
           if(this.env.DB) {
             await this.env.DB.prepare("UPDATE games SET status=?,ended_at=?,result_json=? WHERE game_id=?")
               .bind("ended",new Date(game.endedAt ?? Date.now()).toISOString(),JSON.stringify(game.winner),game.id).run();
@@ -319,6 +372,7 @@ export class RoomCoordinator {
         if(fallen) await sendChoices(fallen,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:","avenge",alive().map(player=>({...player,name:name(player.id)})));
       }
       privateReports=[
+        ...(result.actionReports??[]),
         ...(result.investigations??[]).map(item=>({id:item.actorId,text:"نتيجة التحقيق في "+name(item.targetId)+": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه")})),
         ...(result.monitoring??[]).map(item=>({id:item.actorId,text:"نتيجة المراقبة في "+name(item.targetId)+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له.")}))
       ];
@@ -346,9 +400,11 @@ export class RoomCoordinator {
         const role=fallen?.role;
         return "🩸 عُثر على جثة "+name(id)+"...\n"+(deathScenes[role]??"ترك الليل خلفه سرًا جديدًا.")+"\n🎭 هويته الحقيقية: "+(roleNames[role]??"مجهولة")+".";
       });
+      const nightEvent=chooseNightEvent();
       announcement=result.deaths.length
         ? "🌑 انقشع الظلام، لكن المدينة لم تستيقظ بسلام...\n"+deathLines[Math.floor(Math.random()*deathLines.length)]+"\n\n"+revealDeaths.join("\n")
         : "🌘 مرّت الليلة بلا جثث... لا أحد يعرف إن كان الطبيب قد أنقذ ضحية، أم أن المافيا أخطأت هدفها. الصمت هذه المرة أكثر رعبًا.";
+      announcement+="\n\n🕵️ "+nightEvent.title+": "+nightEvent.text;
       if(game.phase==="ended") {
         state.status="ended";
         announcement+="\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
@@ -420,20 +476,22 @@ export class RoomCoordinator {
         state.status="ended";
         const fallen=completed.result.eliminated?completed.game.players.find(player=>player.id===completed.result.eliminated):null;
         const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
-        announcement=(fallen?"⚰️ صدر الحكم... أُقصي "+name(fallen.id)+".\n🎭 انكشفت هويته: "+(roleNames[fallen.role]??fallen.role)+".":"⚖️ تفرّقت الأصوات ولم يُقصَ أحد.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
+        announcement=(fallen?"⚰️ صدر الحكم... أُقصي "+name(fallen.id)+".\n🎭 انكشفت هويته: "+(roleNames[fallen.role]??fallen.role)+".":completed.result.reason==="tie"?"⚖️ انقسمت الأصوات بالتساوي. لم يُقصَ أحد، وبقي الشك بين الجميع.":completed.result.reason==="no_majority"?"⚖️ لم يحصل أي مرشح على أغلبية كافية. نجا المتهم مؤقتًا.":"⚖️ لم تصل أصوات صالحة كافية لإصدار الحكم.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
       } else {
         state.deadline=Date.now()+90_000;
         const fallen=completed.result.eliminated?completed.game.players.find(player=>player.id===completed.result.eliminated):null;
         const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
-        announcement=(fallen?"⚰️ نُفّذ الحكم على "+name(fallen.id)+"...\n🎭 كان دوره: "+(roleNames[fallen.role]??fallen.role)+".":"⚖️ لم يُقصَ أحد؛ نجا المتهم من الحكم.")+abstainedText+skippedText+"\n\n🌙 أُطفئت الأنوار من جديد... أمام المافيا 90 ثانية لتختار ضحيتها التالية.";
+        announcement=(fallen?"⚰️ نُفّذ الحكم على "+name(fallen.id)+"...\n🎭 كان دوره: "+(roleNames[fallen.role]??fallen.role)+".":completed.result.reason==="tie"?"⚖️ تعادل التصويت. لم يُقصَ أحد، وعاد الجميع إلى الليل وهم أكثر ريبة.":completed.result.reason==="no_majority"?"⚖️ لم يحصل المتهم على أغلبية الأصوات؛ لم يُقصَ أحد.":"⚖️ لم تكتمل أصوات صالحة كافية؛ لم يُقصَ أحد.")+abstainedText+skippedText+"\n\n🌙 أُطفئت الأنوار من جديد... أمام المافيا 90 ثانية لتختار ضحيتها التالية.";
       }
     } else {
       return;
     }
 
+    appendPublicEvent(game,{phase:game.phase,text:announcement});
     game.stateVersion=(game.stateVersion??0)+1;
     state.stateVersion=(state.stateVersion??0)+1;
     if(state.status==="ended") {
+      await this.persistGameResults(state);
       const roles={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
       const reveal=game.players.map(player=>name(player.id)+" — "+(roles[player.role]??player.role)+(player.alive?" (باقٍ)":" (مقصى)"));
       announcement+="\nكشف الأدوار:\n"+reveal.join("\n");
