@@ -36,6 +36,19 @@ export class RoomCoordinator {
     ).bind(game.id,String(roomId),"playing",now).run();
   }
 
+
+  async persistGameResults(state) {
+    if (!this.env.DB || !state?.game?.winner || state.game.winner.winner === "cancelled") return;
+    const game=state.game;
+    const playedAt=new Date(game.endedAt ?? Date.now()).toISOString();
+    const winner=game.winner.winner;
+    const winnerPlayerId=game.winner.playerId ? String(game.winner.playerId) : null;
+    const statements=game.players.map(player=>this.env.DB.prepare(
+      "INSERT OR IGNORE INTO player_game_results (game_id,telegram_id,display_name,role,faction,alive,winner,winner_player_id,played_at) VALUES (?,?,?,?,?,?,?,?,?)"
+    ).bind(String(game.id),String(player.id),String(state.players[player.id]?.name??player.id),String(player.role),String(player.faction),player.alive?1:0,String(winner),winnerPlayerId,playedAt));
+    if(statements.length) await this.env.DB.batch(statements);
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/join" && request.method === "POST") {
@@ -153,6 +166,23 @@ export class RoomCoordinator {
       const state=await this.ctx.storage.get("room");
       if(!state) return Response.json({error:"room_not_found"},{status:404});
       return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null,defendant:state.game?.defendant??null});
+    }
+    if (url.pathname === "/profile" && request.method === "POST") {
+      const {actorId}=await request.json();
+      if(!this.env.DB) return Response.json({error:"stats_unavailable"},{status:503});
+      const rows=await this.env.DB.prepare("SELECT display_name,role,faction,alive,winner,winner_player_id,played_at FROM player_game_results WHERE telegram_id=? ORDER BY played_at DESC LIMIT 500").bind(String(actorId)).all();
+      const games=rows.results??[];
+      const wins=games.filter(row=>row.winner===row.faction||(row.winner==="survivor"&&row.role==="survivor")||(row.winner==="gambler"&&row.winner_player_id===String(actorId))).length;
+      const mafiaWins=games.filter(row=>row.faction==="mafia"&&row.winner==="mafia").length;
+      const cityWins=games.filter(row=>row.faction==="city"&&row.winner==="city").length;
+      const survived=games.filter(row=>row.alive===1).length;
+      const titles=[];
+      if(games.length>=1) titles.push("🎭 لاعب متمرّس");
+      if(wins>=5) titles.push("🏆 صانع الانتصارات");
+      if(mafiaWins>=3) titles.push("🕶️ عقل المافيا");
+      if(cityWins>=3) titles.push("🛡️ حامي المدينة");
+      if(survived>=5) titles.push("🌘 الناجي الصلب");
+      return Response.json({games:games.length,wins,losses:games.length-wins,winRate:games.length?Math.round(wins*100/games.length):0,mafiaWins,cityWins,survived,titles,recent:games.slice(0,5).map(row=>({role:row.role,winner:row.winner,playedAt:row.played_at}))});
     }
     if (url.pathname === "/history") {
       const state=await this.ctx.storage.get("room");
