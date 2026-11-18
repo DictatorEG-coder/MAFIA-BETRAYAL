@@ -103,10 +103,14 @@ export class RoomCoordinator {
       const state=await this.ctx.storage.get("room");
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if(state.status!=="ended") return Response.json({error:"game_not_ended"},{status:409});
-      state.status="lobby"; state.game=null; state.deadline=null; state.stateVersion++;
+      state.status="lobby"; state.game=null; state.deadline=null; state.players={}; state.voteGrace=false; state.stateVersion++;
+      await this.ctx.storage.deleteAlarm?.();
       await this.ctx.storage.put("room",state);
-      if(this.env.DB) await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?").bind("lobby",new Date().toISOString(),state.chatId).run();
-      return Response.json({ok:true,players:Object.keys(state.players).length});
+      if(this.env.DB) {
+        await this.env.DB.prepare("DELETE FROM players WHERE room_id=?").bind(state.chatId).run();
+        await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?").bind("lobby",new Date().toISOString(),state.chatId).run();
+      }
+      return Response.json({ok:true,players:0});
     }
     if (url.pathname === "/players") {
       const state=await this.ctx.storage.get("room");
@@ -297,19 +301,32 @@ export class RoomCoordinator {
         ...(result.investigations??[]).map(item=>({id:item.actorId,text:"نتيجة التحقيق في "+name(item.targetId)+": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه")})),
         ...(result.monitoring??[]).map(item=>({id:item.actorId,text:"نتيجة المراقبة في "+name(item.targetId)+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له.")}))
       ];
-      announcement=result.deaths.length?"انتهى الليل. تم إقصاء: "+result.deaths.map(name).join("، "):"انتهى الليل دون إقصاء.";
+      const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+      const deathLines=[
+        "مع أول خيط للفجر، انفتح باب المشرحة على سرٍّ لم يكن ينبغي لأحد رؤيته.",
+        "دوّى صراخٌ من آخر الممرات... وعندما وصل الجميع، كان الأوان قد فات.",
+        "على أرضية المكان، آثار عراكٍ عنيف. لم ينجُ صاحبها من الليل.",
+        "لم تكن تلك ليلة عادية؛ ترك الظلام خلفه ضحية ورسالة بلا توقيع."
+      ];
+      const revealDeaths=result.deaths.map(id=>{
+        const fallen=game.players.find(player=>player.id===id);
+        return "🩸 عُثر على جثة **"+name(id)+"**... كانت هويته: "+(roleNames[fallen?.role]??"مجهولة")+".";
+      });
+      announcement=result.deaths.length
+        ? "🌑 انقشع الظلام، لكن المدينة لم تستيقظ بسلام...\n"+deathLines[Math.floor(Math.random()*deathLines.length)]+"\n\n"+revealDeaths.join("\n")
+        : "🌘 مرّت الليلة بلا جثث... لا أحد يعرف إن كان الطبيب قد أنقذ ضحية، أم أن المافيا أخطأت هدفها. الصمت هذه المرة أكثر رعبًا.";
       if(game.phase==="ended") {
         state.status="ended";
         announcement+="\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
       } else {
         game.phase="day";
         state.deadline=Date.now()+120_000;
-        announcement+="\n☀️ بدأ النهار. أمامكم 120 ثانية للنقاش.";
+        announcement+="\n\n☀️ دقّت ساعة المدينة... أمامكم 120 ثانية. تحدثوا، اتهموا، اكشفوا التناقضات؛ فقد يكون القاتل جالسًا بجواركم.";
       }
     } else if(game.phase==="day") {
       game.phase="nomination";
       state.deadline=Date.now()+30_000;
-      announcement="انتهى النقاش. أمامكم 30 ثانية للترشيح السري. أرسلنا قائمة اللاعبين إلى الخاص.";
+      announcement="🔔 انتهى وقت الكلام. حان وقت الاتهام! أمامكم 30 ثانية لترشيح شخص واحد سرًا. لا تتسرعوا... فصوت واحد قد يرسل بريئًا إلى المقصلة.";
       for(const player of alive()) {
         const targets=alive().filter(target=>target.id!==player.id).map(target=>({...target,name:name(target.id)}));
         await sendChoices(player,"🗳️ اختر لاعبًا لترشيحه سرًا:", "nominate",targets);
@@ -322,7 +339,7 @@ export class RoomCoordinator {
       } else {
         game.phase="night";
         state.deadline=Date.now()+90_000;
-        announcement="انتهت مهلة الترشيح دون ترشيحات. لم يُحدد متهم، ولذلك لن يحدث تصويت هذه الجولة. يبدأ الليل التالي لمدة 90 ثانية.";
+        announcement="⚖️ انتهت مهلة الترشيح... لا متهم هذه المرة، لكن هذا لا يعني أن المدينة آمنة. أُغلقت الأبواب وعاد الليل؛ 90 ثانية أخرى، والمافيا تتحرك.";
       }
     } else if(game.phase==="defense") {
       game.phase="voting";
@@ -367,10 +384,14 @@ export class RoomCoordinator {
       const skippedText=skipped.length?"\nلم يصوّت: "+skipped.map(player=>name(player.id)).join("، ")+" — تم تجاوز أصواتهم.":"";
       if(completed.game.phase==="ended") {
         state.status="ended";
-        announcement=(completed.result.eliminated?"انتهى التصويت وتم إقصاء "+name(completed.result.eliminated)+".":"انتهى التصويت دون إقصاء.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
+        const fallen=completed.result.eliminated?completed.game.players.find(player=>player.id===completed.result.eliminated):null;
+        const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+        announcement=(fallen?"⚰️ صدر الحكم... أُقصي "+name(fallen.id)+".\n🎭 انكشفت هويته: "+(roleNames[fallen.role]??fallen.role)+".":"⚖️ تفرّقت الأصوات ولم يُقصَ أحد.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
       } else {
         state.deadline=Date.now()+90_000;
-        announcement=(completed.result.eliminated?"تم إقصاء "+name(completed.result.eliminated)+".":"لم يُقصَ أحد.")+abstainedText+skippedText+"\n🌙 يبدأ الليل التالي لمدة 90 ثانية.";
+        const fallen=completed.result.eliminated?completed.game.players.find(player=>player.id===completed.result.eliminated):null;
+        const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+        announcement=(fallen?"⚰️ نُفّذ الحكم على "+name(fallen.id)+"...\n🎭 كان دوره: "+(roleNames[fallen.role]??fallen.role)+".":"⚖️ لم يُقصَ أحد؛ نجا المتهم من الحكم.")+abstainedText+skippedText+"\n\n🌙 أُطفئت الأنوار من جديد... أمام المافيا 90 ثانية لتختار ضحيتها التالية.";
       }
     } else {
       return;
