@@ -175,7 +175,7 @@ export async function routeUpdate(update,env) {
   const players=await roster(env,chatId);
   await sendMessage(env,chatId,players.length?players.map(p=>p.slot+". "+p.name+(p.alive?"":" — مقصى")).join("\n"):"لا توجد غرفة بعد."); return;
  }
- if(command==="/startgame" || command==="/start") {
+ if(command==="/startgame") {
   const preflight=await roomCall(env,chatId,"/prepare",{actorId:actor.id}); const ready=await preflight.json();
   if(!preflight.ok) { await sendMessage(env,chatId,ready.error==="player_count"?"العدد الحالي "+ready.count+"؛ نحتاج من 5 إلى 10 لاعبين.":"تعذر تجهيز اللعبة: "+(ready.error??"خطأ")); return; }
   const failures=[];
@@ -192,7 +192,7 @@ export async function routeUpdate(update,env) {
    const action=["boss","killer"].includes(p.role)?"attack":["doctor","guard"].includes(p.role)?"protect":p.role==="detective"?"investigate":p.role==="spy"?"monitor":null;
    const rows=action?targets.map(x=>[{text:x.name,callback_data:"mb:act:"+chatId+":"+action+":"+x.id}]):[];
    try {
-    await sendMessage(env,p.id,"🎭 دورك: "+ROLE_NAMES[p.role]+"\\n\\nمهمتك: "+ROLE_OBJECTIVES[p.role]+"\\nالمجموعة: "+(roomInfo.chatTitle??"المجموعة")+allies+"\\n\\nلا تكشف دورك لأي لاعب. ستصلك اختياراتك السرية هنا عبر الأزرار.",rows.length?{reply_markup:{inline_keyboard:rows}}:{});
+    await sendMessage(env,p.id,"🎭 دورك: "+ROLE_NAMES[p.role]+"\\n\\nمهمتك: "+ROLE_OBJECTIVES[p.role]+(p.mission?"\\nمهمتك السرية: "+(GAMBLER_MISSION_TEXTS[p.mission]??"أكمل مهمتك."):"")+"\\nالمجموعة: "+(roomInfo.chatTitle??"المجموعة")+allies+"\\n\\nلا تكشف دورك لأي لاعب. ستصلك اختياراتك السرية هنا عبر الأزرار.",rows.length?{reply_markup:{inline_keyboard:rows}}:{});
    } catch { deliveryFailures.push(p.name); }
   }
   await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. ستصلكم الترشيحات والتصويتات عبر أزرار خاصة."+(deliveryFailures.length?"\\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، "):"")); return; }
