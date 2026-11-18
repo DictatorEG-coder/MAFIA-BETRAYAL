@@ -123,7 +123,12 @@ export class RoomCoordinator {
       const allies=player.faction==="mafia"?state.game.players.filter(p=>p.faction==="mafia"&&p.id!==player.id).map(p=>state.players[p.id]?.name??p.id):[];
       return Response.json({role:player.role,allies,mission:player.mission??null});
     }
-    if (url.pathname === "/room-info") {\n      const state=await this.ctx.storage.get("room");\n      if(!state) return Response.json({error:"room_not_found"},{status:404});\n      return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null,defendant:state.game?.defendant??null});\n    }\n    if (url.pathname === "/result") {
+    if (url.pathname === "/room-info") {
+      const state=await this.ctx.storage.get("room");
+      if(!state) return Response.json({error:"room_not_found"},{status:404});
+      return Response.json({chatId:state.chatId,chatTitle:state.chatTitle??"المجموعة",status:state.status,phase:state.game?.phase??null,round:state.game?.round??null,defendant:state.game?.defendant??null});
+    }
+    if (url.pathname === "/result") {
       const state=await this.ctx.storage.get("room");
       if(!state || state.status!=="ended") return Response.json({error:"game_not_ended"},{status:409});
       return Response.json({winner:state.game.winner,players:state.game.players.map(p=>({id:p.id,role:p.role,faction:p.faction,alive:p.alive}))});
@@ -219,7 +224,14 @@ export class RoomCoordinator {
       try { castVote(state.game,actorId,targetId); await this.ctx.storage.put("room",state); return Response.json({ok:true}); }
       catch(e){ return Response.json({error:e.message},{status:400}); }
     }
-    if (url.pathname === "/vote/abstain" && request.method === "POST") {\n      const {actorId}=await request.json();\n      const state=await this.ctx.storage.get("room");\n      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});\n      try { castAbstention(state.game,actorId); await this.ctx.storage.put("room",state); return Response.json({ok:true}); }\n      catch(e){ return Response.json({error:e.message},{status:400}); }\n    }\n    if (url.pathname === "/vote/finish" && request.method === "POST") {
+    if (url.pathname === "/vote/abstain" && request.method === "POST") {
+      const {actorId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state?.game || state.status!=="playing") return Response.json({error:"no_active_game"},{status:409});
+      try { castAbstention(state.game,actorId); await this.ctx.storage.put("room",state); return Response.json({ok:true}); }
+      catch(e){ return Response.json({error:e.message},{status:400}); }
+    }
+    if (url.pathname === "/vote/finish" && request.method === "POST") {
       const {actorId}=await request.json();
       const state=await this.ctx.storage.get("room");
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
@@ -390,5 +402,4 @@ export class RoomCoordinator {
       catch(error) { console.error("phase_announcement_failed",error?.message??"unknown"); }
     }
   }
-}
 }
