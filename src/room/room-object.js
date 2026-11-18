@@ -333,7 +333,7 @@ export class RoomCoordinator {
       const accused=game.players.find(player=>player.id===game.defendant);
       announcement="انتهى الدفاع. بدأ التصويت السري لمدة 60 ثانية. أرسلنا أزرار التصويت إلى الخاص.";
       for(const player of alive()) {
-        await sendChoices(player,"🗳️ صوّت سرًا على المتهم: "+name(accused?.id), "vote",accused?[{...accused,name:name(accused.id)}]:[],true);
+        await sendChoices(player,"🗳️ صوّت سرًا على المتهم: "+name(accused?.id), "vote",accused&&player.id!==accused.id?[{...accused,name:name(accused.id)}]:[],true);
       }
     } else if(game.phase==="voting") {
       const pending=alive().filter(player=>!game.votes?.[player.id]&&!game.abstentions?.[player.id]);
@@ -343,7 +343,7 @@ export class RoomCoordinator {
         const accused=game.players.find(player=>player.id===game.defendant);
         announcement="⏳ لم يصوّت بعد: "+pending.map(player=>name(player.id)).join("، ")+". أمامهم 10 ثوانٍ إضافية، ثم سيُتجاوز تصويتهم.";
         for(const player of pending) {
-          await sendChoices(player,"⏳ بقيت 10 ثوانٍ. صوّت على "+name(accused?.id)+" أو اختر الامتناع:","vote",accused?[{...accused,name:name(accused.id)}]:[],true);
+          await sendChoices(player,"⏳ بقيت 10 ثوانٍ. صوّت على "+name(accused?.id)+" أو اختر الامتناع:","vote",accused&&player.id!==accused.id?[{...accused,name:name(accused.id)}]:[],true);
         }
         await this.ctx.storage.put("room",state);
         await this.ctx.storage.setAlarm(state.deadline);
