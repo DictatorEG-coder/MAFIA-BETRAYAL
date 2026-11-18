@@ -1,28 +1,20 @@
 import { sendMessage, telegramCall } from "./api.js";
 
 const HELP = [
- "🕯️ MAFIA: BETRAYAL — مدينة الغُراب",
- "/mafia — إنشاء غرفة، ومنشئها يصبح قائدها",
- "اكتب أنا أو اضغط زر الانضمام — دخول الغرفة",
- "ابدأ — بدء اللعبة (قائد الغرفة فقط)",
- "تفاعل ❤️ — ضع التفاعل الذي تختاره على رسالة ترد عليها (للمالك فقط)",
- "/join — الانضمام إلى الغرفة",
- "/leave — مغادرة الانتظار",
- "/startgame — تجهيز الخاص وبدء اللعبة",
- "/players — عرض اللاعبين وأرقامهم",
- "/myrole رقم_المجموعة — استرجاع دورك في الخاص",
- "/status — حالة الغرفة",
- "/newgame — فتح جولة جديدة بعد انتهاء السابقة (قائد الغرفة فقط)",
- "الأفعال السرية في الخاص: /attack رقم_المجموعة رقم_اللاعب، /protect، /investigate، /spy، /avenge، /nominate، /vote",
- "أوامر قائد الغرفة: /resolve، /defendant، /openvote، /finishvote",
- "/rules — عرض هذه القائمة"
-].join("\n");
+ "🎭 طريقة اللعب — MAFIA: BETRAYAL",
+ "• انضموا إلى المجموعة حتى يكتمل 5 لاعبين على الأقل.",
+ "• يحصل كل لاعب على دور ومهمة سرية في الخاص.",
+ "• ليلًا، تنفّذ الأدوار الخاصة أفعالها من الأزرار.",
+ "• نهارًا، تناقشون ثم ترشّحون لاعبًا سرًا من أزرار الخاص.",
+ "• بعد الدفاع، صوّتوا على المتهم أو اختاروا الامتناع عن التصويت.",
+ "• لا تكشف دورك. يفوز من يحقق هدف فريقه أو مهمته."
+].join("\\n");
 
 const GAMBLER_MISSION_TEXTS={survive:"ابقَ حيًا حتى نهاية الجولة الحالية.",nominate:"رشّح اللاعب الذي سيصبح المتهم.",vote:"صوّت للاعب الذي سيتم إقصاؤه."};
 const ROLE_NAMES={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
 const ROLE_OBJECTIVES={
  detective:"افحص لاعبًا ليلًا لتعرف إن كان من المافيا.",doctor:"احمِ لاعبًا كل ليلة من هجوم المافيا.",guard:"احمِ لاعبًا كل ليلة من هجوم المافيا.",
- avenger:"إذا أُقصيت، اختر لاعبًا واحدًا للانتقام منه مرة واحدة عبر /avenge رقم_المجموعة رقم_اللاعب.",citizen:"راقب النقاش وصوّت بحذر لإقصاء التهديدات.",
+ avenger:"إذا أُقصيت، ستظهر لك فرصة لاختيار لاعب واحد للانتقام منه مرة واحدة.",citizen:"راقب النقاش وصوّت بحذر لإقصاء التهديدات.",
  boss:"نسّق هجوم المافيا ليلًا وابقَ متخفيًا.",killer:"شارك المافيا في اختيار هدف الهجوم الليلي.",
  survivor:"هدفك البقاء حيًا حتى نهاية الجولة الرابعة.",spy:"راقب لاعبًا ليلًا لتعرف هل قام بفعل أم بقي ساكنًا، دون كشف دوره.",gambler:"أنت مستقل؛ مهمتك السرية لم تُفعّل بعد."
 };
@@ -133,7 +125,7 @@ export async function routeUpdate(update,env) {
  if(inPrivate) {
   if(command==="/myrole") {
    const roomId=parts[1];
-   if(!roomId || !/^-?[0-9]+$/.test(roomId)) { await sendMessage(env,chatId,"الصيغة: /myrole رقم_المجموعة"); return; }
+   if(!roomId || !/^-?[0-9]+$/.test(roomId)) { await sendMessage(env,chatId,"يُرسل دورك تلقائيًا عند بدء اللعبة. استخدم أزرار الرسالة السرية لاتخاذ قراراتك."); return; }
    const response=await roomCall(env,roomId,"/myrole",{actorId:actor.id}); const data=await response.json();
    if(!response.ok) { await sendMessage(env,chatId,"تعذر استرجاع دورك: "+(data.error??"خطأ")); return; }
    const allies=data.allies?.length?"\nحلفاؤك: "+data.allies.join("، "):"";
@@ -159,7 +151,7 @@ export async function routeUpdate(update,env) {
    } else await sendMessage(env,chatId,response.ok?"تم تسجيل اختيارك سرًا.":"لم يُقبل اختيارك: "+(data.error??"خطأ"));
    return;
   }
-  await sendMessage(env,chatId,"أوامر اللعبة السرية تُرسل هنا في الخاص. استخدم الصيغة: /attack رقم_المجموعة رقم_اللاعب. أرسل /rules لعرض بقية الأوامر."); return;
+  await sendMessage(env,chatId,"قرارات اللعبة تُنفّذ من الأزرار التي تصلك في الخاص. لا تحتاج إلى كتابة أرقام أو أوامر."); return;
  }
 
  if(command==="/mafia"||command==="/join") {
@@ -196,7 +188,7 @@ export async function routeUpdate(update,env) {
   for(const p of data.players) {
    const allies=["boss","killer","spy"].includes(p.role)?"\\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
    const targets=data.players.filter(x=>x.id!==p.id);
-   const action=["boss","killer"].includes(p.role)?"attack":["doctor","guard"].includes(p.role)?"protect":p.role==="detective"?"investigate":p.role==="spy"?"monitor":p.role==="avenger"?"avenge":null;
+   const action=["boss","killer"].includes(p.role)?"attack":["doctor","guard"].includes(p.role)?"protect":p.role==="detective"?"investigate":p.role==="spy"?"monitor":null;
    const rows=action?targets.map(x=>[{text:x.name,callback_data:"mb:act:"+chatId+":"+action+":"+x.id}]):[];
    try {
     await sendMessage(env,p.id,"🎭 دورك: "+ROLE_NAMES[p.role]+"\\n\\nمهمتك: "+ROLE_OBJECTIVES[p.role]+"\\nالمجموعة: "+(roomInfo.chatTitle??"المجموعة")+allies+"\\n\\nلا تكشف دورك لأي لاعب. ستصلك اختياراتك السرية هنا عبر الأزرار.",rows.length?{reply_markup:{inline_keyboard:rows}}:{});
@@ -205,7 +197,7 @@ export async function routeUpdate(update,env) {
   await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. ستصلكم الترشيحات والتصويتات عبر أزرار خاصة."+(deliveryFailures.length?"\\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، "):"")); return; }
  const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote"};
  if(actionCommands[command]) {
-  await sendMessage(env,chatId,"للحفاظ على سرية الأفعال والتصويت، أرسل هذا الأمر في الخاص مع رقم المجموعة ورقم اللاعب. مثال: "+command+" "+chatId+" 2"); return;
+  await sendMessage(env,chatId,"للحفاظ على سرية الاختيارات، استخدم الأزرار التي تصلك في الخاص عند فتح مرحلة الترشيح أو التصويت."); return;
  }
  if(command==="/resolve") {
   const response=await roomCall(env,chatId,"/night/resolve",{actorId:actor.id}); const data=await response.json();
