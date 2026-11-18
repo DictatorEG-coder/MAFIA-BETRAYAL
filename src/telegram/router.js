@@ -29,6 +29,21 @@ async function roster(env,chatId) {
  const data=await response.json();
  return data.players??[];
 }
+const SCENE_MEDIA = {
+ night: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1280&q=85",
+ death: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1280&q=85",
+ finale: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1280&q=85"
+};
+const SCREAM_SFX_PAGE = "https://pixabay.com/sound-effects/film-special-effects-scary-scream-401725/";
+async function sendScenePhoto(env,chatId,photo,caption,extra={}) {
+ try {
+  await telegramCall(env,"sendPhoto",{chat_id:chatId,photo,caption,...extra});
+  return true;
+ } catch(error) {
+  console.error("scene_photo_failed",error?.message??"unknown");
+  return false;
+ }
+}
 async function announceResult(env,chatId) {
  const response=await roomCall(env,chatId,"/result");
  if(!response.ok) return;
@@ -339,7 +354,14 @@ export async function routeUpdate(update,env) {
    await sendMessage(env,item.actorId,"نتيجة المراقبة في "+(target?.name??"اللاعب")+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له."));
   }
   const dead=(data.deaths??[]).map(id=>players.find(p=>p.id===id)?.name??"لاعب");
-  await sendMessage(env,chatId,(dead.length?"انتهى الليل. المقصى: "+dead.join("، "):"انتهى الليل دون إقصاء.")+"\nالمرحلة التالية: "+data.phase);
+   if(dead.length) {
+    const caption="🚨 عُثر على جثة مع أول ضوء...\n"+dead.join("، ")+" لم يعد بين الأحياء.";
+    await sendScenePhoto(env,chatId,SCENE_MEDIA.death,caption,{reply_markup:{inline_keyboard:[[{text:"🔊 مؤثر صرخة الرعب",url:SCREAM_SFX_PAGE}]]}});
+    await sendMessage(env,chatId,"انتهى الليل. المقصى: "+dead.join("، ")+"\nالمرحلة التالية: "+data.phase);
+   } else {
+    await sendScenePhoto(env,chatId,SCENE_MEDIA.night,"🌑 مرّت الليلة دون جثة... لكن الصمت لا يعني الأمان.");
+    await sendMessage(env,chatId,"انتهى الليل دون إقصاء.\nالمرحلة التالية: "+data.phase);
+   }
   if(data.phase==="ended") await announceResult(env,chatId); return;
  }
  if(command==="/defendant") {
