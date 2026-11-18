@@ -475,12 +475,12 @@ export class RoomCoordinator {
         state.status="ended";
         const fallen=completed.result.eliminated?completed.game.players.find(player=>player.id===completed.result.eliminated):null;
         const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
-        announcement=(fallen?"⚰️ صدر الحكم... أُقصي "+name(fallen.id)+".\n🎭 انكشفت هويته: "+(roleNames[fallen.role]??fallen.role)+".":"⚖️ تفرّقت الأصوات ولم يُقصَ أحد.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
+        announcement=(fallen?"⚰️ صدر الحكم... أُقصي "+name(fallen.id)+".\n🎭 انكشفت هويته: "+(roleNames[fallen.role]??fallen.role)+".":completed.result.reason==="tie"?"⚖️ انقسمت الأصوات بالتساوي. لم يُقصَ أحد، وبقي الشك بين الجميع.":completed.result.reason==="no_majority"?"⚖️ لم يحصل أي مرشح على أغلبية كافية. نجا المتهم مؤقتًا.":"⚖️ لم تصل أصوات صالحة كافية لإصدار الحكم.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
       } else {
         state.deadline=Date.now()+90_000;
         const fallen=completed.result.eliminated?completed.game.players.find(player=>player.id===completed.result.eliminated):null;
         const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
-        announcement=(fallen?"⚰️ نُفّذ الحكم على "+name(fallen.id)+"...\n🎭 كان دوره: "+(roleNames[fallen.role]??fallen.role)+".":"⚖️ لم يُقصَ أحد؛ نجا المتهم من الحكم.")+abstainedText+skippedText+"\n\n🌙 أُطفئت الأنوار من جديد... أمام المافيا 90 ثانية لتختار ضحيتها التالية.";
+        announcement=(fallen?"⚰️ نُفّذ الحكم على "+name(fallen.id)+"...\n🎭 كان دوره: "+(roleNames[fallen.role]??fallen.role)+".":completed.result.reason==="tie"?"⚖️ تعادل التصويت. لم يُقصَ أحد، وعاد الجميع إلى الليل وهم أكثر ريبة.":completed.result.reason==="no_majority"?"⚖️ لم يحصل المتهم على أغلبية الأصوات؛ لم يُقصَ أحد.":"⚖️ لم تكتمل أصوات صالحة كافية؛ لم يُقصَ أحد.")+abstainedText+skippedText+"\n\n🌙 أُطفئت الأنوار من جديد... أمام المافيا 90 ثانية لتختار ضحيتها التالية.";
       }
     } else {
       return;
