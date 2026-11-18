@@ -40,7 +40,8 @@ export class RoomCoordinator {
     if (url.pathname === "/join" && request.method === "POST") {
       const { chatId, actor, chatTitle } = await request.json();
       if (!chatId || !actor?.id) return Response.json({ error: "invalid_input" }, { status: 400 });
-      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), chatTitle:String(chatTitle ?? "المجموعة"), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };\n      if (chatTitle) state.chatTitle=String(chatTitle);
+      const state = await this.ctx.storage.get("room") ?? { chatId:String(chatId), chatTitle:String(chatTitle ?? "المجموعة"), creatorId:String(actor.id), status:"lobby", players:{}, stateVersion:0 };
+      if (chatTitle) state.chatTitle=String(chatTitle);
       if (state.chatId !== String(chatId)) return Response.json({ error:"room_mismatch" }, { status:409 });
       if (!state.creatorId) state.creatorId=String(actor.id);
       if (state.status !== "lobby") return Response.json({ error:"game_in_progress" }, { status:409 });
