@@ -92,6 +92,7 @@ test("city wins immediately when every hostile faction has been eliminated",()=>
 test("survivor wins after four rounds only while the city has not already eliminated every threat",()=>{
  const players=[
   {id:"c",role:"citizen",faction:"city",alive:true},
+  {id:"d",role:"doctor",faction:"city",alive:true},
   {id:"m",role:"boss",faction:"mafia",alive:true},
   {id:"s",role:"survivor",faction:"independent",alive:true,hostile:false}
  ];
