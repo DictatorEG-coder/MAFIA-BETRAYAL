@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS player_game_results (
   faction TEXT NOT NULL,
   alive INTEGER NOT NULL DEFAULT 0,
   winner TEXT,
+  winner_player_id TEXT,
   played_at TEXT NOT NULL,
   PRIMARY KEY (game_id, telegram_id)
 );
