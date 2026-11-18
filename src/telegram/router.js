@@ -187,6 +187,25 @@ export async function routeUpdate(update,env) {
   const response=await roomCall(env,chatId,"/newgame",{actorId:actor.id}); const data=await response.json();
   await sendMessage(env,chatId,response.ok?"🕯️ انتهت آثار الجولة السابقة. فُتحت غرفة جديدة، وصُفّرت قائمة اللاعبين. على الجميع الانضمام من جديد عبر «أنا» أو زر الانضمام؛ لن يُحتسب أحد تلقائيًا.":"تعذر فتح جولة جديدة: "+(data.error??"خطأ")); return;
  }
+ if(command==="/history" || command==="/spectate" || command==="/stats") {
+  const roomId=inPrivate?parts[1]:chatId;
+  if(!roomId || !/^-?[0-9]+$/.test(roomId)) { await sendMessage(env,chatId,"استخدم الأمر داخل مجموعة المباراة، أو أرسل رقم المجموعة بعد الأمر في الخاص."); return; }
+  const path=command==="/spectate"?"/spectate":command==="/stats"?"/stats":"/history";
+  const response=await roomCall(env,roomId,path,command==="/spectate"?{actorId:actor.id}:null);
+  const data=await response.json();
+  if(!response.ok) {
+   await sendMessage(env,chatId,data.error==="spectator_only_after_elimination"?"وضع المشاهد متاح بعد إقصائك فقط.": "لا يمكن عرض البيانات: "+(data.error??"خطأ"));
+   return;
+  }
+  if(command==="/stats") {
+   await sendMessage(env,chatId,"📊 إحصائيات المباراة الحالية\nالجولات: "+data.rounds+"\nاللاعبون: "+data.players+"\nالناجون: "+data.survivors+"\nالمقصون: "+data.eliminated+"\nالأحداث المسجلة: "+data.events);
+   return;
+  }
+  const history=data.history??[];
+  const lines=history.slice(-12).map(item=>"الجولة "+item.round+" — "+item.text);
+  await sendMessage(env,chatId,(command==="/spectate"?"👁️ وضع المشاهد — متابعة الأحداث العامة فقط.\n\n":"📜 سجل أحداث المباراة\n\n")+(lines.length?lines.join("\n\n"):"لم تُسجل أحداث بعد."));
+  return;
+ }
  if(command==="/players") {
   const players=await roster(env,chatId);
   await sendMessage(env,chatId,players.length?players.map(p=>p.slot+". "+p.name+(p.alive?"":" — مقصى")).join("\n"):"لا توجد غرفة بعد."); return;
@@ -225,6 +244,9 @@ export async function routeUpdate(update,env) {
   for(const id of data.deaths??[]) {
    const fallen=players.find(p=>p.id===id&&p.role==="avenger");
    if(fallen) await sendMessage(env,fallen.id,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:",{reply_markup:{inline_keyboard:players.filter(p=>p.alive).map(p=>[{text:p.name,callback_data:"mb:act:"+chatId+":avenge:"+p.id}])}});
+  }
+  for(const item of data.actionReports??[]) {
+   await sendMessage(env,item.actorId,item.text);
   }
   for(const item of data.investigations??[]) {
    const target=players.find(p=>p.id===item.targetId);
