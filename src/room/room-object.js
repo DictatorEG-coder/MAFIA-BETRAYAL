@@ -438,7 +438,8 @@ export class RoomCoordinator {
       const selected=selectDefendant(game);
       if(selected.defendant) {
         state.deadline=Date.now()+90_000;
-        announcement="🕯️ انتهى الترشيح... وقد اختارت المدينة ضحيتها: "+name(selected.defendant)+".\n\n⚖️ أُغلقت أبواب المحكمة. أمام المتهم 90 ثانية ليدافع عن حياته؛ كل كلمة قد تكون آخر ما يقوله أمام هذه المدينة.";\n        if(this.env.TELEGRAM_BOT_TOKEN) { try { await sendMessage(this.env,selected.defendant,"🕯️ أنت الآن في مواجهة المدينة. أمامك 90 ثانية للدفاع عن نفسك. لا أحد يعرف إن كانوا يبحثون عن الحقيقة... أم عن ضحية."); } catch {} }
+        announcement="🕯️ انتهى الترشيح... وقد اختارت المدينة ضحيتها: "+name(selected.defendant)+".\n\n⚖️ أُغلقت أبواب المحكمة. أمام المتهم 90 ثانية ليدافع عن حياته؛ كل كلمة قد تكون آخر ما يقوله أمام هذه المدينة.";
+        if(this.env.TELEGRAM_BOT_TOKEN) { try { await sendMessage(this.env,selected.defendant,"🕯️ أنت الآن في مواجهة المدينة. أمامك 90 ثانية للدفاع عن نفسك. لا أحد يعرف إن كانوا يبحثون عن الحقيقة... أم عن ضحية."); } catch {} }
       } else {
         game.phase="night";
         state.deadline=Date.now()+90_000;
