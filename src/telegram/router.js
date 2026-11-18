@@ -204,6 +204,10 @@ export async function routeUpdate(update,env) {
   const response=await roomCall(env,chatId,"/night/resolve",{actorId:actor.id}); const data=await response.json();
   if(!response.ok) { await sendMessage(env,chatId,"تعذر حسم الليل: "+(data.error??"خطأ")); return; }
   const players=await roster(env,chatId);
+  for(const id of data.deaths??[]) {
+   const fallen=players.find(p=>p.id===id&&p.role==="avenger");
+   if(fallen) await sendMessage(env,fallen.id,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:",{reply_markup:{inline_keyboard:players.filter(p=>p.alive).map(p=>[{text:p.name,callback_data:"mb:act:"+chatId+":avenge:"+p.id}])}});
+  }
   for(const item of data.investigations??[]) {
    const target=players.find(p=>p.id===item.targetId);
    await sendMessage(env,item.actorId,"نتيجة التحقيق في "+(target?.name??"اللاعب") +": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه"));
@@ -230,6 +234,8 @@ export async function routeUpdate(update,env) {
   const response=await roomCall(env,chatId,"/vote/finish",{actorId:actor.id}); const data=await response.json();
   if(!response.ok) { await sendMessage(env,chatId,"تعذر إنهاء التصويت: "+(data.error??"خطأ")); return; }
   const players=await roster(env,chatId); const target=players.find(p=>p.id===data.eliminated);
+  const fallen=players.find(p=>p.id===data.eliminated&&p.role==="avenger");
+  if(fallen) await sendMessage(env,fallen.id,"⚔️ لقد أُقصيت. اختر لاعبًا واحدًا للانتقام:",{reply_markup:{inline_keyboard:players.filter(p=>p.alive).map(p=>[{text:p.name,callback_data:"mb:act:"+chatId+":avenge:"+p.id}])}});
   if(data.gamblerId&&data.gamblerMission) await sendMessage(env,data.gamblerId,"🎲 مهمتك السرية الجديدة: "+(GAMBLER_MISSION_TEXTS[data.gamblerMission]??"أكمل مهمتك."));
   await sendMessage(env,chatId,data.eliminated?"تم إقصاء "+(target?.name??"لاعب")+". لن يُكشف دوره حتى نهاية الجولة.":"لم يُقصَ أحد ("+data.reason+").");
   if(data.phase==="ended") await announceResult(env,chatId);
