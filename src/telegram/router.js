@@ -196,7 +196,7 @@ export async function routeUpdate(update,env) {
     await sendMessage(env,p.id,"🎭 دورك: "+ROLE_NAMES[p.role]+"\n\nمهمتك: "+ROLE_OBJECTIVES[p.role]+(p.mission?"\nمهمتك السرية: "+(GAMBLER_MISSION_TEXTS[p.mission]??"أكمل مهمتك."):"")+"\nالمجموعة: "+(roomInfo.chatTitle??"المجموعة")+allies+"\n\nلا تكشف دورك لأي لاعب. ستصلك اختياراتك السرية هنا عبر الأزرار.",rows.length?{reply_markup:{inline_keyboard:rows}}:{});
    } catch { deliveryFailures.push(p.name); }
   }
-  await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. ستصلكم الترشيحات والتصويتات عبر أزرار خاصة."+(deliveryFailures.length?"\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، "):"")); return; }
+  await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. بدأ الليل الأول؛ أمامكم 90 ثانية للأفعال السرية. ستصلكم الترشيحات والتصويتات عبر أزرار خاصة."+(deliveryFailures.length?"\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، "):"")); return; }
  const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote"};
  if(actionCommands[command]) {
   await sendMessage(env,chatId,"للحفاظ على سرية الاختيارات، استخدم الأزرار التي تصلك في الخاص عند فتح مرحلة الترشيح أو التصويت."); return;
