@@ -75,6 +75,7 @@ export function finishVoting(game) {
   game.phase = "night";
   game.round++;
   game.votes = {};
+  game.abstentions = {};
   game.nominations = {};
   game.defendant = null;
   if(gamblerWon) game.winner={winner:"gambler",reason:"secret_mission_completed",playerId:gambler.id};
