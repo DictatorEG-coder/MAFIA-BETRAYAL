@@ -69,7 +69,7 @@ export async function routeUpdate(update,env) {
    }
    if(data==="mb:rules") {
     await telegramCall(env,"answerCallbackQuery",{callback_query_id:callback.id});
-    await sendMessage(env,callback.message.chat.id,"🎭 طريقة اللعب\\n\\n• اجمعوا 5 لاعبين على الأقل في مجموعة واحدة.\\n• يحصل كل لاعب على دور ومهمة سرية في الخاص.\\n• ليلًا، تنفّذ الأدوار الخاصة أفعالها من الأزرار.\\n• نهارًا، تناقشون ثم ترشّحون لاعبًا سرًا.\\n• بعد الدفاع، صوّتوا على المتهم أو اختاروا الامتناع.\\n• لا تكشف دورك، وحاول تحقيق هدفك.");
+    await sendMessage(env,callback.message.chat.id,"🎭 طريقة اللعب\n\n• اجمعوا 5 لاعبين على الأقل في مجموعة واحدة.\n• يحصل كل لاعب على دور ومهمة سرية في الخاص.\n• ليلًا، تنفّذ الأدوار الخاصة أفعالها من الأزرار.\n• نهارًا، تناقشون ثم ترشّحون لاعبًا سرًا.\n• بعد الدفاع، صوّتوا على المتهم أو اختاروا الامتناع.\n• لا تكشف دورك، وحاول تحقيق هدفك.");
     return;
    }
    if(data.startsWith("mb:act:")) {
@@ -120,9 +120,10 @@ export async function routeUpdate(update,env) {
  const chatId=String(message.chat.id);
  const actor={id:String(message.from.id),name:[message.from.first_name,message.from.last_name].filter(Boolean).join(" ")||"لاعب"};
  const inPrivate=message.chat.type==="private";
- if((command==="/start"||command==="/rules") && inPrivate) { await sendMessage(env,chatId,"🕯️ MAFIA: BETRAYAL\\n\\nلعبة مافيا اجتماعية بأدوار سرية وتحالفات وخداع. انضم إلى مجموعة، ثم اكتب /mafia لفتح غرفة اللعبة. استلم دورك في الخاص واتخذ قراراتك عبر الأزرار دون كتابة أوامر معقدة.\\n\\nتحتاج المجموعة إلى 5 لاعبين على الأقل.",{reply_markup:{inline_keyboard:[[{text:"➕ إضافة إلى المجموعة",url:"https://t.me/Dictator_mafia_bot?startgroup=play"}],[{text:"📖 طريقة اللعب",callback_data:"mb:rules"}]]}}); return; }
+ if((command==="/start"||command==="/rules") && inPrivate) { await sendMessage(env,chatId,"🕯️ MAFIA: BETRAYAL\n\nلعبة مافيا اجتماعية بأدوار سرية وتحالفات وخداع. انضم إلى مجموعة، ثم اكتب /mafia لفتح غرفة اللعبة. استلم دورك في الخاص واتخذ قراراتك عبر الأزرار دون كتابة أوامر معقدة.\n\nتحتاج المجموعة إلى 5 لاعبين على الأقل.",{reply_markup:{inline_keyboard:[[{text:"➕ إضافة إلى المجموعة",url:"https://t.me/Dictator_mafia_bot?startgroup=play"}],[{text:"📖 طريقة اللعب",callback_data:"mb:rules"}]]}}); return; }
  if(command==="/rules") { await sendMessage(env,chatId,HELP); return; }
- if(command==="/start" && !inPrivate) { await sendMessage(env,chatId,"أهلًا بكم في MAFIA: BETRAYAL. اكتبوا /mafia لإنشاء غرفة جديدة، ثم ينضم اللاعبون ويبدأ قائد الغرفة اللعبة."); return; }\n if(command==="/react") { return handleOwnerReaction(message,env,arg??""); }
+ if(command==="/start" && !inPrivate) { await sendMessage(env,chatId,"أهلًا بكم في MAFIA: BETRAYAL. اكتبوا /mafia لإنشاء غرفة جديدة، ثم ينضم اللاعبون ويبدأ قائد الغرفة اللعبة."); return; }
+ if(command==="/react") { return handleOwnerReaction(message,env,arg??""); }
  if(inPrivate) {
   if(command==="/myrole") {
    const roomId=parts[1];
@@ -187,15 +188,15 @@ export async function routeUpdate(update,env) {
   const roomInfo=await (await roomCall(env,chatId,"/room-info")).json();
   const deliveryFailures=[];
   for(const p of data.players) {
-   const allies=["boss","killer","spy"].includes(p.role)?"\\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
+   const allies=["boss","killer","spy"].includes(p.role)?"\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
    const targets=data.players.filter(x=>x.id!==p.id);
    const action=["boss","killer"].includes(p.role)?"attack":["doctor","guard"].includes(p.role)?"protect":p.role==="detective"?"investigate":p.role==="spy"?"monitor":null;
    const rows=action?targets.map(x=>[{text:x.name,callback_data:"mb:act:"+chatId+":"+action+":"+x.id}]):[];
    try {
-    await sendMessage(env,p.id,"🎭 دورك: "+ROLE_NAMES[p.role]+"\\n\\nمهمتك: "+ROLE_OBJECTIVES[p.role]+(p.mission?"\\nمهمتك السرية: "+(GAMBLER_MISSION_TEXTS[p.mission]??"أكمل مهمتك."):"")+"\\nالمجموعة: "+(roomInfo.chatTitle??"المجموعة")+allies+"\\n\\nلا تكشف دورك لأي لاعب. ستصلك اختياراتك السرية هنا عبر الأزرار.",rows.length?{reply_markup:{inline_keyboard:rows}}:{});
+    await sendMessage(env,p.id,"🎭 دورك: "+ROLE_NAMES[p.role]+"\n\nمهمتك: "+ROLE_OBJECTIVES[p.role]+(p.mission?"\nمهمتك السرية: "+(GAMBLER_MISSION_TEXTS[p.mission]??"أكمل مهمتك."):"")+"\nالمجموعة: "+(roomInfo.chatTitle??"المجموعة")+allies+"\n\nلا تكشف دورك لأي لاعب. ستصلك اختياراتك السرية هنا عبر الأزرار.",rows.length?{reply_markup:{inline_keyboard:rows}}:{});
    } catch { deliveryFailures.push(p.name); }
   }
-  await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. ستصلكم الترشيحات والتصويتات عبر أزرار خاصة."+(deliveryFailures.length?"\\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، "):"")); return; }
+  await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. ستصلكم الترشيحات والتصويتات عبر أزرار خاصة."+(deliveryFailures.length?"\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، "):"")); return; }
  const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote"};
  if(actionCommands[command]) {
   await sendMessage(env,chatId,"للحفاظ على سرية الاختيارات، استخدم الأزرار التي تصلك في الخاص عند فتح مرحلة الترشيح أو التصويت."); return;
