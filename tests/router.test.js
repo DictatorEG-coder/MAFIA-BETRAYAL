@@ -92,7 +92,7 @@ test("private start shows onboarding and add-to-group button instead of numeric 
   assert.equal(payload.reply_markup.inline_keyboard[0][0].text,"➕ إضافة إلى المجموعة");
   assert.equal(payload.reply_markup.inline_keyboard[0][0].url,"https://t.me/Dictator_mafia_bot?startgroup=play");
   assert.doesNotMatch(payload.text,/رقم_المجموعة/);
- });
+ } finally { globalThis.fetch=previous; }
 });
 
 test("private abstention button is routed to the correct room",async()=>{
