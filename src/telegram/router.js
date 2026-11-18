@@ -37,6 +37,40 @@ async function announceResult(env,chatId) {
  const roles=data.players.map(p=>p.id+" — "+(ROLE_NAMES[p.role]??p.role)+(p.alive?" (باقٍ)":" (مقصى)"));
  await sendMessage(env,chatId,"🏁 انتهت الجولة. الفائز: "+(names[data.winner?.winner]??data.winner?.winner??"غير محدد")+"\nكشف الأدوار:\n"+roles.join("\n"));
 }
+async function trackUser(env,user) {
+ if(!env.DB || !user?.id) return;
+ const now=new Date().toISOString();
+ const name=[user.first_name,user.last_name].filter(Boolean).join(" ")||user.username||"مستخدم";
+ try { await env.DB.prepare("INSERT INTO bot_users (user_id,display_name,username,first_seen_at,last_seen_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name,username=excluded.username,last_seen_at=excluded.last_seen_at")
+  .bind(String(user.id),name,user.username??null,now,now).run(); } catch(error) { console.error("track_user_failed",error?.message??"unknown"); }
+}
+async function trackGroup(env,chat,status="active") {
+ if(!env.DB || !chat?.id || !["group","supergroup"].includes(chat.type)) return;
+ const now=new Date().toISOString();
+ try { await env.DB.prepare("INSERT INTO bot_groups (chat_id,title,chat_type,status,added_at,last_seen_at) VALUES (?,?,?,?,?,?) ON CONFLICT(chat_id) DO UPDATE SET title=excluded.title,chat_type=excluded.chat_type,status=excluded.status,last_seen_at=excluded.last_seen_at,added_at=CASE WHEN excluded.status='active' THEN COALESCE(bot_groups.added_at,excluded.added_at) ELSE bot_groups.added_at END")
+  .bind(String(chat.id),String(chat.title??"مجموعة بدون اسم"),chat.type,status,status==="active"?now:null,now).run(); } catch(error) { console.error("track_group_failed",error?.message??"unknown"); }
+}
+async function handleMembershipUpdate(update,env) {
+ const event=update?.my_chat_member;
+ if(!event?.chat || !event?.new_chat_member?.user?.is_bot) return false;
+ const member=event.new_chat_member;
+ const active=["member","administrator"].includes(member.status)||(member.status==="restricted"&&member.is_member===true);
+ await trackGroup(env,event.chat,active?"active":"left");
+ return true;
+}
+async function sendOwnerPanel(env,chatId) {
+ if(!env.DB) { await sendMessage(env,chatId,"لوحة المالك غير متاحة: قاعدة البيانات غير متصلة."); return; }
+ const [userCount,groupCount,users,groups]=await Promise.all([
+  env.DB.prepare("SELECT COUNT(*) AS total FROM bot_users").first(),
+  env.DB.prepare("SELECT COUNT(*) AS total FROM bot_groups WHERE status='active'").first(),
+  env.DB.prepare("SELECT user_id,display_name,username,last_seen_at FROM bot_users ORDER BY last_seen_at DESC LIMIT 20").all(),
+  env.DB.prepare("SELECT chat_id,title,chat_type,status,added_at,last_seen_at FROM bot_groups ORDER BY last_seen_at DESC LIMIT 20").all()
+ ]);
+ const userLines=(users.results??[]).map((u,i)=>(i+1)+". "+u.display_name+" — "+u.user_id+(u.username?" (@"+u.username+")":""));
+ const groupLines=(groups.results??[]).map((g,i)=>(i+1)+". "+g.title+" — "+g.chat_id+" ["+(g.status==="active"?"نشطة":"غادرها البوت")+"]");
+ const message="🛡️ لوحة مالك MAFIA: BETRAYAL\n\n👥 المستخدمون المسجلون: "+(userCount?.total??0)+"\n🏘️ المجموعات النشطة: "+(groupCount?.total??0)+"\n\n👤 آخر 20 مستخدمًا تفاعلوا مع البوت:\n"+(userLines.join("\n")||"لا يوجد مستخدمون مسجلون.")+"\n\n🏘️ آخر 20 مجموعة أُضيف إليها البوت أو تفاعل معها:\n"+(groupLines.join("\n")||"لا توجد مجموعات مسجلة.")+"\n\nملاحظة: التسجيل يبدأ من تفعيل هذا التحديث؛ المجموعات القديمة تُسجّل عند أول تفاعل جديد.";
+ await sendMessage(env,chatId,message);
+}
 const OWNER_REACTIONS=new Set(["❤️","🔥","😂","😍","👏","👍","🤝","⚡","🎉","😮","😢","🙏","💯","🥳","💔"]);
 async function handleOwnerReaction(message,env,emoji) {
  const ownerId=String(env.OWNER_TELEGRAM_ID??"");
@@ -59,7 +93,10 @@ async function handleOwnerReaction(message,env,emoji) {
  }
 }
 export async function routeUpdate(update,env) {
+ if(await handleMembershipUpdate(update,env)) return;
  const callback=update?.callback_query;
+ if(callback?.from) await trackUser(env,callback.from);
+ if(callback?.message?.chat) await trackGroup(env,callback.message.chat,"active");
  if(callback?.message?.chat?.id && callback?.from?.id) {
   const data=String(callback.data??"");
   const actorId=String(callback.from.id);
@@ -106,6 +143,8 @@ export async function routeUpdate(update,env) {
  }
  const message=update?.message;
  if(!message?.chat?.id||!message?.from?.id) return;
+ await trackUser(env,message.from);
+ await trackGroup(env,message.chat,"active");
  const raw=String(message.text??"").trim();
  const normalized=raw.replace(/[أإآ]/g,"ا");
  if(!raw.startsWith("/")) {
@@ -128,6 +167,10 @@ export async function routeUpdate(update,env) {
  const chatId=String(message.chat.id);
  const actor={id:String(message.from.id),name:[message.from.first_name,message.from.last_name].filter(Boolean).join(" ")||"لاعب"};
  const inPrivate=message.chat.type==="private";
+ if(command==="/panel" && inPrivate) {
+  if(String(env.OWNER_TELEGRAM_ID??"")!==actor.id) { await sendMessage(env,chatId,"هذه اللوحة متاحة لمالك البوت فقط."); return; }
+  await sendOwnerPanel(env,chatId); return;
+ }
  if((command==="/start"||command==="/rules") && inPrivate) { await sendMessage(env,chatId,"🕯️ MAFIA: BETRAYAL\n\nلعبة مافيا اجتماعية بأدوار سرية وتحالفات وخداع. انضم إلى مجموعة، ثم اكتب /mafia لفتح غرفة اللعبة. استلم دورك في الخاص واتخذ قراراتك عبر الأزرار دون كتابة أوامر معقدة.\n\nتحتاج المجموعة إلى 5 لاعبين على الأقل.",{reply_markup:{inline_keyboard:[[{text:"➕ إضافة إلى المجموعة",url:"https://t.me/Dictator_mafia_bot?startgroup=play"}],[{text:"📖 طريقة اللعب",callback_data:"mb:rules"}]]}}); return; }
  if(command==="/rules") { await sendMessage(env,chatId,HELP); return; }
  if(command==="/start" && !inPrivate) { await sendMessage(env,chatId,"أهلًا بكم في MAFIA: BETRAYAL. اكتبوا /mafia لإنشاء غرفة جديدة، ثم ينضم اللاعبون ويبدأ قائد الغرفة اللعبة."); return; }
@@ -166,7 +209,9 @@ export async function routeUpdate(update,env) {
 
  if(command==="/mafia"||command==="/join") {
   const response=await roomCall(env,chatId,"/join",{chatId,actor,chatTitle:message.chat.title??"المجموعة"}); const data=await response.json();
-  await sendMessage(env,chatId,response.ok?(command==="/mafia"?"🕯️ فُتحت غرفة الغُراب. ":"")+"انضممت إلى الغرفة. عدد اللاعبين: "+data.players+"/10\nاكتب «أنا» للانضمام، أو اضغط الزر. عندما يكتمل العدد، يكتب قائد الغرفة «ابدأ».":"تعذر الانضمام: "+(data.error??"خطأ"),response.ok?{reply_markup:{inline_keyboard:[[{text:"انضمام إلى اللعبة",callback_data:"mb:join"}],[{text:"ابدأ اللعبة (للقائد)",callback_data:"mb:start"}]]}}:{}); return;
+  const leader=data.creatorName??"قائد الغرفة";
+  const lobbyText=response.ok?(command==="/mafia"&&data.isCreator?"🕯️ فُتحت غرفة الغُراب. ":"")+"انضممت إلى الغرفة. عدد اللاعبين: "+data.players+"/10\nقائد الغرفة: "+leader+(data.isCreator?" (أنت)":"\nالقائد وحده يستطيع بدء اللعبة.")+"\nاكتب «أنا» للانضمام، أو اضغط الزر. عندما يكتمل العدد، يكتب القائد «ابدأ».":"تعذر الانضمام: "+(data.error??"خطأ");
+  await sendMessage(env,chatId,lobbyText,response.ok?{reply_markup:{inline_keyboard:[[{text:"انضمام إلى اللعبة",callback_data:"mb:join"}],[{text:"ابدأ اللعبة (للقائد فقط)",callback_data:"mb:start"}]]}}:{}); return;
  }
  if(command==="/leave") {
   const response=await roomCall(env,chatId,"/leave",{actorId:actor.id}); const data=await response.json();
@@ -222,7 +267,10 @@ export async function routeUpdate(update,env) {
  }
  if(command==="/startgame") {
   const preflight=await roomCall(env,chatId,"/prepare",{actorId:actor.id}); const ready=await preflight.json();
-  if(!preflight.ok) { await sendMessage(env,chatId,ready.error==="player_count"?"العدد الحالي "+ready.count+"؛ نحتاج من 5 إلى 10 لاعبين.":"تعذر تجهيز اللعبة: "+(ready.error??"خطأ")); return; }
+  if(!preflight.ok) {
+   const message=ready.error==="player_count"?"العدد الحالي "+ready.count+"؛ نحتاج من 5 إلى 10 لاعبين.":ready.error==="creator_only"?"⛔ بدء اللعبة متاح فقط لمن أنشأ الغرفة: "+(ready.creatorName??"قائد الغرفة")+".":"تعذر تجهيز اللعبة: "+(ready.error??"خطأ");
+   await sendMessage(env,chatId,message); return;
+  }
   const failures=[];
   for(const p of ready.players) { try { await sendMessage(env,p.id,"تم تجهيز غرفة MAFIA: BETRAYAL. ستصلك رسالتك السرية عند بدء الجولة."); } catch { failures.push(p.name); } }
   if(failures.length) { await sendMessage(env,chatId,"لم تبدأ الجولة. يجب على هؤلاء فتح البوت والضغط على Start: "+failures.join("، ")); return; }
