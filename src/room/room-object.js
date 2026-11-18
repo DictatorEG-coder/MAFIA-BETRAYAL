@@ -420,7 +420,7 @@ export class RoomCoordinator {
       announcement+="\n\n🕵️ "+nightEvent.title+": "+nightEvent.text;
       if(game.phase==="ended") {
         state.status="ended";
-        announcement+="\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
+        announcement+="\n🏁 انتهت اللعبة. الفائز: "+winnerLabel(game.winner,name);
       } else {
         game.phase="day";
         state.deadline=Date.now()+120_000;
