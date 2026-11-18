@@ -79,6 +79,12 @@ export async function routeUpdate(update,env) {
     const body=["nominate","vote","avenge"].includes(action)?{actorId,targetId}:{actorId,action,targetId};
     const response=await roomCall(env,roomId,path,body); const result=await response.json();
     await telegramCall(env,"answerCallbackQuery",{callback_query_id:callback.id,text:response.ok?"تم تسجيل اختيارك سرًا.":(result.error??"لم يُقبل الاختيار."),show_alert:!response.ok});
+    if(response.ok && action==="avenge") {
+     const players=await roster(env,roomId);
+     const target=players.find(player=>player.id===targetId);
+     await sendMessage(env,roomId,"سقط "+(target?.name??"لاعب")+" في حادثة غامضة.");
+     if(result.phase==="ended") await announceResult(env,roomId);
+    }
     if(response.ok) await sendMessage(env,callback.message.chat.id,"تم تسجيل اختيارك سرًا.");
     return;
    }
