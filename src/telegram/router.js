@@ -174,6 +174,15 @@ export async function routeUpdate(update,env) {
   const data=await (await roomCall(env,chatId,"/status")).json();
   await sendMessage(env,chatId,"الحالة: "+data.status+"\nاللاعبون: "+data.players+"/10"+(data.phase?"\nالمرحلة: "+data.phase:"")+(data.round?"\nالجولة: "+data.round:"")); return;
  }
+ if(command==="/cancelgame") {
+  const response=await roomCall(env,chatId,"/cancel",{actorId:actor.id}); const data=await response.json();
+  if(!response.ok) {
+   await sendMessage(env,chatId,data.error==="creator_only"?"إلغاء اللعبة متاح فقط لمن بدأها.":data.error==="no_active_game"?"لا توجد مباراة نشطة لإلغائها.":"تعذر إلغاء اللعبة: "+(data.error??"خطأ"));
+   return;
+  }
+  await sendMessage(env,chatId,"🛑 أعلن قائد اللعبة الانسحاب من المواجهة. انتهت المباراة وأُغلقت جميع مراحلها ومواعيدها. يمكن بدء غرفة جديدة باستخدام /newgame.");
+  return;
+ }
  if(command==="/newgame") {
   const response=await roomCall(env,chatId,"/newgame",{actorId:actor.id}); const data=await response.json();
   await sendMessage(env,chatId,response.ok?"🕯️ انتهت آثار الجولة السابقة. فُتحت غرفة جديدة، وصُفّرت قائمة اللاعبين. على الجميع الانضمام من جديد عبر «أنا» أو زر الانضمام؛ لن يُحتسب أحد تلقائيًا.":"تعذر فتح جولة جديدة: "+(data.error??"خطأ")); return;
