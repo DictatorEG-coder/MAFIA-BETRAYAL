@@ -174,9 +174,18 @@ export async function routeUpdate(update,env) {
   const data=await (await roomCall(env,chatId,"/status")).json();
   await sendMessage(env,chatId,"الحالة: "+data.status+"\nاللاعبون: "+data.players+"/10"+(data.phase?"\nالمرحلة: "+data.phase:"")+(data.round?"\nالجولة: "+data.round:"")); return;
  }
+ if(command==="/cancelgame") {
+  const response=await roomCall(env,chatId,"/cancel",{actorId:actor.id}); const data=await response.json();
+  if(!response.ok) {
+   await sendMessage(env,chatId,data.error==="creator_only"?"إلغاء اللعبة متاح فقط لمن بدأها.":data.error==="no_active_game"?"لا توجد مباراة نشطة لإلغائها.":"تعذر إلغاء اللعبة: "+(data.error??"خطأ"));
+   return;
+  }
+  await sendMessage(env,chatId,"🛑 أعلن قائد اللعبة الانسحاب من المواجهة. انتهت المباراة وأُغلقت جميع مراحلها ومواعيدها. يمكن بدء غرفة جديدة باستخدام /newgame.");
+  return;
+ }
  if(command==="/newgame") {
   const response=await roomCall(env,chatId,"/newgame",{actorId:actor.id}); const data=await response.json();
-  await sendMessage(env,chatId,response.ok?"أُعيد فتح الغرفة. يمكن للجميع الاستعداد لجولة جديدة.":"تعذر فتح جولة جديدة: "+(data.error??"خطأ")); return;
+  await sendMessage(env,chatId,response.ok?"🕯️ انتهت آثار الجولة السابقة. فُتحت غرفة جديدة، وصُفّرت قائمة اللاعبين. على الجميع الانضمام من جديد عبر «أنا» أو زر الانضمام؛ لن يُحتسب أحد تلقائيًا.":"تعذر فتح جولة جديدة: "+(data.error??"خطأ")); return;
  }
  if(command==="/players") {
   const players=await roster(env,chatId);
@@ -194,15 +203,17 @@ export async function routeUpdate(update,env) {
   const roomInfo=await (await roomCall(env,chatId,"/room-info")).json();
   const deliveryFailures=[];
   for(const p of data.players) {
-   const allies=["boss","killer","spy"].includes(p.role)?"\nحلفاؤك: "+mafia.filter(x=>x.id!==p.id).map(x=>x.name).join("، "):"";
+   const allyNames=mafia.filter(x=>x.id!==p.id).map(x=>x.name);
+   const allies=["boss","killer","spy"].includes(p.role)&&allyNames.length?"\n🤝 حلفاؤك في المافيا: "+allyNames.join("، "):"";
    const targets=data.players.filter(x=>x.id!==p.id);
    const action=["boss","killer"].includes(p.role)?"attack":["doctor","guard"].includes(p.role)?"protect":p.role==="detective"?"investigate":p.role==="spy"?"monitor":null;
-   const rows=action?targets.map(x=>[{text:x.name,callback_data:"mb:act:"+chatId+":"+action+":"+x.id}]):[];
+   const actionHeadings={boss:"🔪 اختر اللاعب الذي تريد المافيا النيل منه هذه الليلة:",killer:"🩸 اختر هدف هجوم المافيا:",doctor:"🩺 اختر اللاعب الذي تريد إنقاذه من الموت:",guard:"🛡️ اختر اللاعب الذي ستوفر له الحماية:",detective:"🔎 اختر اللاعب الذي تريد كشف حقيقته:",spy:"👁️ اختر اللاعب الذي تريد مراقبة تحركاته:"};
+   const rows=action?[[{text:"— اختر هدفك —",callback_data:"mb:noop"}],...targets.map(x=>[{text:"🎯 "+x.name,callback_data:"mb:act:"+chatId+":"+action+":"+x.id}])]:[];
    try {
-    await sendMessage(env,p.id,"🎭 دورك: "+ROLE_NAMES[p.role]+"\n\nمهمتك: "+ROLE_OBJECTIVES[p.role]+(p.mission?"\nمهمتك السرية: "+(GAMBLER_MISSION_TEXTS[p.mission]??"أكمل مهمتك."):"")+"\nالمجموعة: "+(roomInfo.chatTitle??"المجموعة")+allies+"\n\nلا تكشف دورك لأي لاعب. ستصلك اختياراتك السرية هنا عبر الأزرار.",rows.length?{reply_markup:{inline_keyboard:rows}}:{});
+    await sendMessage(env,p.id,"🎭 دورك: "+ROLE_NAMES[p.role]+"\n\n📜 مهمتك: "+ROLE_OBJECTIVES[p.role]+(p.mission?"\n🎲 مهمتك السرية: "+(GAMBLER_MISSION_TEXTS[p.mission]??"أكمل مهمتك."):"")+"\n\n"+(actionHeadings[p.role]??"انتظر المرحلة المناسبة لتصلك اختياراتك السرية.")+"\n\nالمجموعة: "+(roomInfo.chatTitle??"المجموعة")+allies+"\n\n🔒 لا تكشف دورك لأي لاعب. كل اختيار تتخذه هنا يظل سرًا.",rows.length?{reply_markup:{inline_keyboard:rows.slice(1)}}:{});
    } catch { deliveryFailures.push(p.name); }
   }
-  await sendMessage(env,chatId,"بدأت اللعبة. أُرسلت الأدوار سرًا إلى الخاص. بدأ الليل الأول؛ أمامكم 90 ثانية للأفعال السرية. ستصلكم الترشيحات والتصويتات عبر أزرار خاصة."+(deliveryFailures.length?"\nتعذر إرسال الدور إلى: "+deliveryFailures.join("، "):"")); return; }
+  await sendMessage(env,chatId,"🕯️ أُغلقت أبواب المدينة... وبدأت لعبة الخيانة. وصلت الأدوار سرًا إلى الخاص.\n\n🌑 حلّ الليل الأول؛ أمام أصحاب الأدوار السرية 90 ثانية للتحرك. لا تثقوا بالصمت... فقد يكون صاحبه هو الخطر."); return; }
  const actionCommands={"/attack":"attack","/protect":"protect","/investigate":"investigate","/spy":"monitor","/nominate":"nominate","/vote":"vote"};
  if(actionCommands[command]) {
   await sendMessage(env,chatId,"للحفاظ على سرية الاختيارات، استخدم الأزرار التي تصلك في الخاص عند فتح مرحلة الترشيح أو التصويت."); return;

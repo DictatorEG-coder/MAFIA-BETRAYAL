@@ -98,15 +98,40 @@ export class RoomCoordinator {
       await this.persistGameStart(state.chatId,game);
       return Response.json({ ok:true, gameId:game.id, players:ids.map(id=>({id,name:state.players[id].name,role:game.players.find(p=>p.id===id).role,mission:game.players.find(p=>p.id===id).mission??null})), round:game.round });
     }
+    if (url.pathname === "/cancel" && request.method === "POST") {
+      const {actorId}=await request.json();
+      const state=await this.ctx.storage.get("room");
+      if(!state || state.status!=="playing" || !state.game) return Response.json({error:"no_active_game"},{status:409});
+      if(state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
+      state.status="ended";
+      state.game.phase="ended";
+      state.game.winner={winner:"cancelled"};
+      state.game.endedAt=Date.now();
+      state.deadline=null;
+      state.voteGrace=false;
+      state.stateVersion=(state.stateVersion??0)+1;
+      state.game.stateVersion=(state.game.stateVersion??0)+1;
+      await this.ctx.storage.deleteAlarm?.();
+      await this.ctx.storage.put("room",state);
+      if(this.env.DB) {
+        await this.env.DB.prepare("UPDATE games SET status='ended',ended_at=?,result_json=? WHERE game_id=?").bind(new Date(state.game.endedAt).toISOString(),JSON.stringify(state.game.winner),state.game.id).run();
+        await this.env.DB.prepare("UPDATE rooms SET status='ended',updated_at=? WHERE room_id=?").bind(new Date().toISOString(),state.chatId).run();
+      }
+      return Response.json({ok:true});
+    }
     if (url.pathname === "/newgame" && request.method === "POST") {
       const {actorId}=await request.json();
       const state=await this.ctx.storage.get("room");
       if(!state || state.creatorId!==String(actorId)) return Response.json({error:"creator_only"},{status:403});
       if(state.status!=="ended") return Response.json({error:"game_not_ended"},{status:409});
-      state.status="lobby"; state.game=null; state.deadline=null; state.stateVersion++;
+      state.status="lobby"; state.game=null; state.deadline=null; state.players={}; state.voteGrace=false; state.stateVersion++;
+      await this.ctx.storage.deleteAlarm?.();
       await this.ctx.storage.put("room",state);
-      if(this.env.DB) await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?").bind("lobby",new Date().toISOString(),state.chatId).run();
-      return Response.json({ok:true,players:Object.keys(state.players).length});
+      if(this.env.DB) {
+        await this.env.DB.prepare("DELETE FROM players WHERE room_id=?").bind(state.chatId).run();
+        await this.env.DB.prepare("UPDATE rooms SET status=?,updated_at=? WHERE room_id=?").bind("lobby",new Date().toISOString(),state.chatId).run();
+      }
+      return Response.json({ok:true,players:0});
     }
     if (url.pathname === "/players") {
       const state=await this.ctx.storage.get("room");
@@ -297,19 +322,45 @@ export class RoomCoordinator {
         ...(result.investigations??[]).map(item=>({id:item.actorId,text:"نتيجة التحقيق في "+name(item.targetId)+": "+(item.result==="suspicious"?"مشبوه — من المافيا":"غير مشبوه")})),
         ...(result.monitoring??[]).map(item=>({id:item.actorId,text:"نتيجة المراقبة في "+name(item.targetId)+": "+(item.active?"كان نشطًا خلال الليل، وقد نفّذ فعلًا.":"لم يرصد جهازك أي نشاط ليلي له.")}))
       ];
-      announcement=result.deaths.length?"انتهى الليل. تم إقصاء: "+result.deaths.map(name).join("، "):"انتهى الليل دون إقصاء.";
+      const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+      const deathLines=[
+        "مع أول خيط للفجر، انفتح باب المشرحة على سرٍّ لم يكن ينبغي لأحد رؤيته.",
+        "دوّى صراخٌ من آخر الممرات... وعندما وصل الجميع، كان الأوان قد فات.",
+        "على أرضية المكان، آثار عراكٍ عنيف. لم ينجُ صاحبها من الليل.",
+        "لم تكن تلك ليلة عادية؛ ترك الظلام خلفه ضحية ورسالة بلا توقيع."
+      ];
+      const deathScenes={
+        doctor:"عُثر عليه في غرفة العلاج؛ حقيبته الطبية مبعثرة، ولم تُسعف مهارته هذه المرة.",
+        detective:"وُجدت ملاحظاته ممزقة قرب مسرح الجريمة... اقترب من الحقيقة أكثر مما ينبغي.",
+        guard:"سقط الحارس وهو يؤدي واجبه؛ لم تعد هناك عين تحرس المدينة.",
+        citizen:"كان مواطنًا عاديًا، لكن الليل لم يفرّق بين بريء ومذنب.",
+        boss:"انكشفت هوية العقل الذي كان يحرّك الخيوط من الظلام.",
+        killer:"انتهت مطاردة القاتل، وسقط السلاح من يده إلى الأبد.",
+        spy:"انقطع آخر خيط للتجسس... يبدو أن أحدهم اكتشف مراقب المدينة.",
+        avenger:"رحل قبل أن يُكمل انتقامه؛ لكن قصته قد لا تنتهي هنا.",
+        survivor:"حتى من ظنّ أن النجاة مضمونة، لم يجد ملاذًا من هذا الليل.",
+        gambler:"راهن على الجميع... وخسر الرهان الأخير."
+      };
+      const revealDeaths=result.deaths.map(id=>{
+        const fallen=game.players.find(player=>player.id===id);
+        const role=fallen?.role;
+        return "🩸 عُثر على جثة "+name(id)+"...\n"+(deathScenes[role]??"ترك الليل خلفه سرًا جديدًا.")+"\n🎭 هويته الحقيقية: "+(roleNames[role]??"مجهولة")+".";
+      });
+      announcement=result.deaths.length
+        ? "🌑 انقشع الظلام، لكن المدينة لم تستيقظ بسلام...\n"+deathLines[Math.floor(Math.random()*deathLines.length)]+"\n\n"+revealDeaths.join("\n")
+        : "🌘 مرّت الليلة بلا جثث... لا أحد يعرف إن كان الطبيب قد أنقذ ضحية، أم أن المافيا أخطأت هدفها. الصمت هذه المرة أكثر رعبًا.";
       if(game.phase==="ended") {
         state.status="ended";
         announcement+="\n🏁 انتهت اللعبة. الفائز: "+(game.winner?.winner??"غير محدد");
       } else {
         game.phase="day";
         state.deadline=Date.now()+120_000;
-        announcement+="\n☀️ بدأ النهار. أمامكم 120 ثانية للنقاش.";
+        announcement+="\n\n☀️ دقّت ساعة المدينة... أمامكم 120 ثانية. تحدثوا، اتهموا، اكشفوا التناقضات؛ فقد يكون القاتل جالسًا بجواركم.";
       }
     } else if(game.phase==="day") {
       game.phase="nomination";
       state.deadline=Date.now()+30_000;
-      announcement="انتهى النقاش. أمامكم 30 ثانية للترشيح السري. أرسلنا قائمة اللاعبين إلى الخاص.";
+      announcement="🔔 انتهى وقت الكلام. حان وقت الاتهام! أمامكم 30 ثانية لترشيح شخص واحد سرًا. لا تتسرعوا... فصوت واحد قد يرسل بريئًا إلى المقصلة.";
       for(const player of alive()) {
         const targets=alive().filter(target=>target.id!==player.id).map(target=>({...target,name:name(target.id)}));
         await sendChoices(player,"🗳️ اختر لاعبًا لترشيحه سرًا:", "nominate",targets);
@@ -322,7 +373,7 @@ export class RoomCoordinator {
       } else {
         game.phase="night";
         state.deadline=Date.now()+90_000;
-        announcement="انتهت مهلة الترشيح دون ترشيحات. لم يُحدد متهم، ولذلك لن يحدث تصويت هذه الجولة. يبدأ الليل التالي لمدة 90 ثانية.";
+        announcement="⚖️ انتهت مهلة الترشيح... لا متهم هذه المرة، لكن هذا لا يعني أن المدينة آمنة. أُغلقت الأبواب وعاد الليل؛ 90 ثانية أخرى، والمافيا تتحرك.";
       }
     } else if(game.phase==="defense") {
       game.phase="voting";
@@ -367,10 +418,14 @@ export class RoomCoordinator {
       const skippedText=skipped.length?"\nلم يصوّت: "+skipped.map(player=>name(player.id)).join("، ")+" — تم تجاوز أصواتهم.":"";
       if(completed.game.phase==="ended") {
         state.status="ended";
-        announcement=(completed.result.eliminated?"انتهى التصويت وتم إقصاء "+name(completed.result.eliminated)+".":"انتهى التصويت دون إقصاء.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
+        const fallen=completed.result.eliminated?completed.game.players.find(player=>player.id===completed.result.eliminated):null;
+        const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+        announcement=(fallen?"⚰️ صدر الحكم... أُقصي "+name(fallen.id)+".\n🎭 انكشفت هويته: "+(roleNames[fallen.role]??fallen.role)+".":"⚖️ تفرّقت الأصوات ولم يُقصَ أحد.")+abstainedText+skippedText+"\n🏁 انتهت اللعبة. الفائز: "+(completed.game.winner?.winner??"غير محدد");
       } else {
         state.deadline=Date.now()+90_000;
-        announcement=(completed.result.eliminated?"تم إقصاء "+name(completed.result.eliminated)+".":"لم يُقصَ أحد.")+abstainedText+skippedText+"\n🌙 يبدأ الليل التالي لمدة 90 ثانية.";
+        const fallen=completed.result.eliminated?completed.game.players.find(player=>player.id===completed.result.eliminated):null;
+        const roleNames={detective:"المحقق",doctor:"الطبيب",guard:"الحارس",avenger:"المنتقم",citizen:"المواطن",boss:"زعيم المافيا",killer:"القاتل",spy:"الجاسوس",survivor:"الناجي",gambler:"المقامر"};
+        announcement=(fallen?"⚰️ نُفّذ الحكم على "+name(fallen.id)+"...\n🎭 كان دوره: "+(roleNames[fallen.role]??fallen.role)+".":"⚖️ لم يُقصَ أحد؛ نجا المتهم من الحكم.")+abstainedText+skippedText+"\n\n🌙 أُطفئت الأنوار من جديد... أمام المافيا 90 ثانية لتختار ضحيتها التالية.";
       }
     } else {
       return;
